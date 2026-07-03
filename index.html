@@ -195,7 +195,7 @@
 
     <div class="panel">
       <div class="section-title" style="margin-bottom:6px">
-        <span class="bar"></span><h2>Señales · Medias móviles (21 / 150 / 200)</h2>
+        <span class="bar"></span><h2>Señales · Medias móviles (11 / 21 / 200)</h2>
       </div>
       <p class="note" style="margin:0 0 12px">
         Cruce del precio del subyacente con sus MAs. CEDEAR → símbolo en USD · acción local → <span class="mono">.BA</span> · bonos/letras sin señal.
@@ -240,6 +240,7 @@
             </div>
           </div>
           <button class="btn gold" id="simBtn" style="margin-top:4px">Simular impacto</button>
+          <div id="opMsg" class="hidden" style="margin-top:6px;font-size:12.5px;padding:11px 13px;border-radius:9px"></div>
         </div>
       </div>
 
@@ -304,13 +305,18 @@
 /* =================== ESTADO / CONFIG =================== */
 /* URL del Web App de Apps Script. NO es secreta: sin el token/contraseña
    correcto el backend no devuelve nada. Podés dejarla fija acá. */
-var WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbx-PYKMbDY0NqqbNzhTmo2X1c_vCHVJSipufACmLyRZpaHTRCwDFHn28CfFoxWLpkxU/exec';
+var WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzPC1wL_6JZEfmBSfeJpkvFjNRN_PBUIjELK8hg15GGhZwRdDtfpHaCF9XL6FTEM_1A/exec';
 
 var LS = { token:'elb_pms_token_v1' };
 /* Tickers considerados efectivo/liquidez (agregá los que uses en la base). */
 var LIQUIDEZ_TICKERS = []; // ej: ['PESOS','USD','LIQUIDEZ']
 
+/* Moneda del PPC según el broker. IOL carga en pesos; Balanz en dólares.
+   El PPC de los brokers en USD se pasa a ARS con el CCL en vivo. */
+var BROKER_CCY = { IOL:'ARS', BALANZ:'USD' };
+
 var CFG = { url: WEB_APP_URL, token: localStorage.getItem(LS.token) || '' };
+var CCL = null; // dólar CCL en vivo
 var DATA = [];            // [{broker,cliente,ticker,nominales,ppc}]
 var QUOTES = {};          // {ticker: price|null}
 var pendingTrade = null;  // payload del block trade a confirmar
@@ -348,7 +354,7 @@ function loadData(){
     fillTickerLists();
     fillClientSelect();
     renderKPIs();
-    return loadQuotes();
+    return Promise.all([loadQuotes(), loadCCL()]);
   }).then(function(){
     renderKPIs();
     if($('search').value) renderSearch();
@@ -375,7 +381,7 @@ function doLogin(){
     localStorage.setItem(LS.token, pass);
     closeModal('loginModal');
     setConn(true); fillTickerLists(); fillClientSelect(); renderKPIs();
-    return loadQuotes();
+    return Promise.all([loadQuotes(), loadCCL()]);
   }).then(function(){ renderKPIs(); })
   .catch(function(err){
     CFG.token='';
@@ -404,6 +410,21 @@ function loadQuotes(){
 /* precio efectivo: vivo si existe; si no, PPC (marcado con *) */
 function priceOf(r){ var q=QUOTES[r.ticker]; return (q!=null)? {px:q, live:true} : {px:r.ppc, live:false}; }
 function valueOf(r){ return r.nominales * priceOf(r).px; }
+
+/* PPC pasado a pesos según la moneda del broker */
+function ppcARS(r){
+  var ccy = BROKER_CCY[String(r.broker).toUpperCase()] || 'ARS';
+  if(ccy==='USD' && CCL) return r.ppc * CCL;
+  return r.ppc;
+}
+function costOf(r){ return r.nominales * ppcARS(r); }        // capital invertido (ARS)
+function pnlOf(r){ return valueOf(r) - costOf(r); }          // resultado (ARS)
+function pnlPctOf(r){ var c=costOf(r); return c>0 ? (valueOf(r)/c - 1) : 0; }
+
+function loadCCL(){
+  return api({action:'ccl'}).then(function(j){ CCL=j.ccl||null; })
+    .catch(function(){ CCL=null; });
+}
 
 /* =================== DASHBOARD · KPIs =================== */
 function renderKPIs(){
@@ -446,11 +467,11 @@ function renderSearch(){
   var html='';
   Object.keys(byTicker).sort().forEach(function(tk){
     var list=byTicker[tk];
-    var totNom=0, totVal=0;
-    list.forEach(function(r){ totNom+=r.nominales; totVal+=valueOf(r); });
-    var p=priceOf(list[0]);
+    var totNom=0, totVal=0, totCost=0;
+    list.forEach(function(r){ totNom+=r.nominales; totVal+=valueOf(r); totCost+=costOf(r); });
+    var totPnl=totVal-totCost, totPct=totCost>0?(totVal/totCost-1):0;
     html += '<div style="margin-bottom:18px">'+
-      '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:8px">'+
+      '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:8px;flex-wrap:wrap">'+
         '<span style="font-size:18px;font-weight:800;color:var(--gold)">'+tk+'</span>'+
         '<span class="muted">'+list.length+' cliente(s) · '+fmtNum.format(totNom)+' nominales</span>'+
         '<span style="margin-left:auto" class="mono">'+
@@ -458,21 +479,27 @@ function renderSearch(){
         '</span>'+
       '</div>'+
       '<div class="tbl-wrap"><table><thead><tr>'+
-        '<th>Cliente</th><th>Broker</th><th class="num">Nominales</th><th class="num">PPC</th><th class="num">Valorizado</th>'+
+        '<th>Cliente</th><th>Broker</th><th class="num">Nominales</th><th class="num">PPC ($)</th>'+
+        '<th class="num">Valorizado</th><th class="num">Resultado</th>'+
       '</tr></thead><tbody>';
     list.sort(function(a,b){ return b.nominales-a.nominales; }).forEach(function(r){
-      var pr=priceOf(r);
+      var pr=priceOf(r), pnl=pnlOf(r), pct=pnlPctOf(r), win=pnl>=0;
       html+='<tr>'+
         '<td>'+r.cliente+'</td>'+
         '<td><span class="tag broker">'+r.broker+'</span></td>'+
         '<td class="num mono">'+fmtNum.format(r.nominales)+'</td>'+
-        '<td class="num mono">'+fmtPx.format(r.ppc)+'</td>'+
+        '<td class="num mono">'+fmtARS.format(ppcARS(r))+'</td>'+
         '<td class="num mono">'+fmtARS.format(valueOf(r))+(pr.live?'':' *')+'</td>'+
+        '<td class="num mono '+(win?'est-buy':'est-sell')+'">'+
+          (win?'+':'')+fmtARS.format(pnl)+'<br><span style="font-size:11px">'+(win?'+':'')+(pct*100).toFixed(1)+'%</span>'+
+        '</td>'+
       '</tr>';
     });
+    var win=totPnl>=0;
     html+='<tr style="background:var(--navy-2)"><td colspan="2" style="font-weight:700">Total</td>'+
       '<td class="num mono" style="font-weight:700">'+fmtNum.format(totNom)+'</td><td></td>'+
-      '<td class="num mono" style="font-weight:700;color:var(--gold)">'+fmtARS.format(totVal)+'</td></tr>';
+      '<td class="num mono" style="font-weight:700;color:var(--gold)">'+fmtARS.format(totVal)+'</td>'+
+      '<td class="num mono '+(win?'est-buy':'est-sell')+'" style="font-weight:700">'+(win?'+':'')+fmtARS.format(totPnl)+' ('+(win?'+':'')+(totPct*100).toFixed(1)+'%)</td></tr>';
     html+='</tbody></table></div></div>';
   });
   box.innerHTML=html;
@@ -490,7 +517,7 @@ function calcSignals(){
     var rows=tks.map(function(t){ return {t:t, s:sig[t]||{estado:'N/D'}}; })
                 .sort(function(a,b){ return (order[a.s.estado]||9)-(order[b.s.estado]||9) || a.t.localeCompare(b.t); });
     var html='<div class="tbl-wrap"><table><thead><tr>'+
-      '<th>Ticker</th><th>Señal</th><th class="num">Precio</th><th class="num">MA21</th><th class="num">MA150</th><th class="num">MA200</th><th>Detalle</th>'+
+      '<th>Ticker</th><th>Señal</th><th class="num">Precio</th><th class="num">MA11</th><th class="num">MA21</th><th class="num">MA200</th><th>Detalle</th>'+
       '</tr></thead><tbody>';
     rows.forEach(function(o){
       var s=o.s, est=s.estado||'N/D', cls=est==='N/D'?'ND':est;
@@ -498,8 +525,8 @@ function calcSignals(){
         '<td style="font-weight:700;color:var(--gold)">'+o.t+'</td>'+
         '<td><span class="sig '+cls+'">'+est+'</span></td>'+
         '<td class="num mono">'+(s.last!=null?fmtPx.format(s.last):'—')+'</td>'+
+        '<td class="num mono">'+(s.ma11!=null?fmtPx.format(s.ma11):'—')+'</td>'+
         '<td class="num mono">'+(s.ma21!=null?fmtPx.format(s.ma21):'—')+'</td>'+
-        '<td class="num mono">'+(s.ma150!=null?fmtPx.format(s.ma150):'—')+'</td>'+
         '<td class="num mono">'+(s.ma200!=null?fmtPx.format(s.ma200):'—')+'</td>'+
         '<td class="muted" style="font-size:11.5px">'+(s.motivo||'')+'</td>'+
       '</tr>';
@@ -515,6 +542,15 @@ function updateValueLabel(){
   $('opValueLbl').textContent = $('opMode').value==='porcentaje' ? 'Porcentaje (%)' : 'Nominales por cliente';
 }
 
+function opMsg(txt, isErr){
+  var m=$('opMsg');
+  if(!txt){ m.className='hidden'; m.textContent=''; return; }
+  m.className=''; m.textContent=txt;
+  m.style.background = isErr ? '#3a1720' : '#123726';
+  m.style.color = isErr ? '#ff9aa2' : '#57e39a';
+  m.style.border = '1px solid '+(isErr?'#5a2530':'#1c5a3e');
+}
+
 function simulate(){
   var payload={
     action:'blockTrade', dryRun:true,
@@ -524,13 +560,14 @@ function simulate(){
     value:parseFloat($('opValue').value),
     execPrice:parseFloat($('opPrice').value)||0
   };
-  if(!payload.ticker){ toast('Falta el ticker',true); return; }
-  if(!(payload.value>0)){ toast('Ingresá un valor válido',true); return; }
+  opMsg('');
+  if(!payload.ticker){ opMsg('Falta el ticker.', true); return; }
+  if(!(payload.value>0)){ opMsg('Ingresá un valor válido (mayor a 0).', true); return; }
   $('simBtn').disabled=true; $('simBtn').textContent='Simulando…';
   api(payload).then(function(j){
     pendingTrade = Object.assign({}, payload, {dryRun:false});
     showSimulation(j);
-  }).catch(function(err){ toast(err.message,true); })
+  }).catch(function(err){ opMsg('Error: '+err.message, true); })
     .then(function(){ $('simBtn').disabled=false; $('simBtn').textContent='Simular impacto'; });
 }
 
@@ -585,37 +622,40 @@ function renderClient(){
   var box=$('clientBox');
   if(!name){ box.innerHTML=''; if(clientChart){clientChart.destroy();clientChart=null;} return; }
   var rows=DATA.filter(function(r){ return r.cliente===name; });
-  var total=0; rows.forEach(function(r){ total+=valueOf(r); });
+  var total=0, totalCost=0;
+  rows.forEach(function(r){ total+=valueOf(r); totalCost+=costOf(r); });
+  var totalPnl=total-totalCost, totalPct=totalCost>0?(total/totalCost-1):0, winC=totalPnl>=0;
 
   // agregado por ticker (un cliente puede tener el mismo ticker en 2 brokers)
   var agg={};
   rows.forEach(function(r){
     var k=r.ticker;
-    if(!agg[k]) agg[k]={ticker:k, nominales:0, val:0, broker:{}};
-    agg[k].nominales+=r.nominales; agg[k].val+=valueOf(r); agg[k].broker[r.broker]=1;
+    if(!agg[k]) agg[k]={ticker:k, nominales:0, val:0, cost:0, broker:{}};
+    agg[k].nominales+=r.nominales; agg[k].val+=valueOf(r); agg[k].cost+=costOf(r); agg[k].broker[r.broker]=1;
   });
   var items=Object.keys(agg).map(function(k){return agg[k];}).sort(function(a,b){return b.val-a.val;});
 
   box.innerHTML=
     '<div class="kpis" style="grid-template-columns:repeat(3,1fr);margin-bottom:22px">'+
-      '<div class="kpi"><div class="label">Capitalización</div><div class="value mono">'+fmtARS.format(total)+'</div><div class="sub">'+rows.length+' líneas</div></div>'+
-      '<div class="kpi accent-blue"><div class="label">Tickers</div><div class="value mono">'+items.length+'</div><div class="sub">activos distintos</div></div>'+
+      '<div class="kpi"><div class="label">Capitalización</div><div class="value mono">'+fmtARS.format(total)+'</div><div class="sub">'+rows.length+' líneas · '+items.length+' tickers</div></div>'+
+      '<div class="kpi accent-blue"><div class="label">Resultado</div><div class="value mono '+(winC?'est-buy':'est-sell')+'" style="font-size:22px">'+(winC?'+':'')+fmtARS.format(totalPnl)+'</div><div class="sub '+(winC?'est-buy':'est-sell')+'">'+(winC?'+':'')+(totalPct*100).toFixed(1)+'% sobre lo invertido</div></div>'+
       '<div class="kpi"><div class="label">Mayor posición</div><div class="value mono" style="font-size:20px">'+(items[0]?items[0].ticker:'—')+'</div><div class="sub">'+(items[0]&&total?(items[0].val/total*100).toFixed(1)+'% de la cartera':'')+'</div></div>'+
     '</div>'+
     '<div class="grid-2">'+
       '<div class="panel" style="margin:0"><div class="section-title"><span class="bar"></span><h2>Ponderación de activos</h2></div>'+
         '<div style="max-width:340px;margin:0 auto"><canvas id="pie" height="300"></canvas></div></div>'+
       '<div class="panel" style="margin:0"><div class="section-title"><span class="bar"></span><h2>Posiciones valorizadas</h2></div>'+
-        '<div class="tbl-wrap"><table><thead><tr><th>Ticker</th><th class="num">Nominales</th><th class="num">Valorizado</th><th class="num">Peso</th></tr></thead><tbody>'+
+        '<div class="tbl-wrap"><table><thead><tr><th>Ticker</th><th class="num">Nominales</th><th class="num">Valorizado</th><th class="num">Result.</th><th class="num">Peso</th></tr></thead><tbody>'+
         items.map(function(it){
-          var live = QUOTES[it.ticker]!=null;
+          var live = QUOTES[it.ticker]!=null, pnl=it.val-it.cost, pct=it.cost>0?(it.val/it.cost-1):0, w=pnl>=0;
           return '<tr><td style="font-weight:700;color:var(--gold)">'+it.ticker+'</td>'+
             '<td class="num mono">'+fmtNum.format(it.nominales)+'</td>'+
             '<td class="num mono">'+fmtARS.format(it.val)+(live?'':' *')+'</td>'+
+            '<td class="num mono '+(w?'est-buy':'est-sell')+'">'+(w?'+':'')+(pct*100).toFixed(1)+'%</td>'+
             '<td class="num mono">'+(total?(it.val/total*100).toFixed(1):'0')+'%</td></tr>';
         }).join('')+
         '</tbody></table></div>'+
-        '<p class="note">* valorizado a PPC por falta de cotización en vivo.</p></div>'+
+        '<p class="note">* valorizado a PPC por falta de cotización en vivo. Resultado en % sobre el capital invertido.</p></div>'+
     '</div>';
 
   // gráfico de torta (top 12 + "Otros")
