@@ -574,19 +574,23 @@ function simulate(){
 function showSimulation(j){
   var isSell=j.side==='VENTA';
   $('simTitle').innerHTML = (isSell?'Venta':'Compra')+' de <span style="color:var(--gold)">'+j.ticker+'</span>';
-  $('simSub').textContent = 'Impacta a '+j.changes.length+' cliente(s) · modo '+j.mode+'. Revisá antes de confirmar; esto escribe en la planilla.';
+  var totalOp=0; j.changes.forEach(function(c){ totalOp+=Math.abs(c.delta); });
+  $('simSub').textContent = 'Impacta a '+j.changes.length+' cliente(s) · modo '+j.mode+'. Total a '+(isSell?'vender':'comprar')+': '+fmtNum.format(totalOp)+' nominales. Revisá antes de confirmar; esto escribe en la planilla.';
   var html='<div class="tbl-wrap"><table><thead><tr>'+
-    '<th>Cliente</th><th>Broker</th><th class="num">Nominales</th><th class="num">Δ</th><th class="num">PPC</th>'+
+    '<th>Cliente</th><th>Broker</th><th class="num">Operar</th><th class="num">Nominales</th><th class="num">PPC</th>'+
     '</tr></thead><tbody>';
   j.changes.forEach(function(c){
+    var op=Math.abs(c.delta);
     html+='<tr>'+
       '<td>'+c.cliente+'</td>'+
       '<td><span class="tag broker">'+c.broker+'</span></td>'+
+      '<td class="num mono '+(isSell?'est-sell':'est-buy')+'" style="font-weight:700">'+(isSell?'Vender ':'Comprar ')+fmtNum.format(op)+'</td>'+
       '<td class="num mono">'+fmtNum.format(c.oldNom)+'<span class="arrow">→</span><b>'+fmtNum.format(c.newNom)+'</b></td>'+
-      '<td class="num mono '+(c.delta<0?'est-sell':'est-buy')+'">'+(c.delta>0?'+':'')+fmtNum.format(c.delta)+'</td>'+
       '<td class="num mono">'+fmtPx.format(c.oldPpc)+(c.newPpc!==c.oldPpc?'<span class="arrow">→</span>'+fmtPx.format(c.newPpc):'')+'</td>'+
     '</tr>';
   });
+  html+='<tr style="background:var(--navy-2)"><td colspan="2" style="font-weight:700">Total a '+(isSell?'vender':'comprar')+'</td>'+
+    '<td class="num mono '+(isSell?'est-sell':'est-buy')+'" style="font-weight:700">'+fmtNum.format(totalOp)+'</td><td colspan="2"></td></tr>';
   html+='</tbody></table></div>';
   $('simBody').innerHTML=html;
   openModal('simModal');
