@@ -319,6 +319,7 @@ var CFG = { url: WEB_APP_URL, token: localStorage.getItem(LS.token) || '' };
 var CCL = null; // dólar CCL en vivo
 var DATA = [];            // [{broker,cliente,ticker,nominales,ppc}]
 var QUOTES = {};          // {ticker: price|null}
+var CAPITAL_TOTAL = 0;    // capital administrado total (para % de cartera en buscador)
 var pendingTrade = null;  // payload del block trade a confirmar
 
 var fmtARS = new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0});
@@ -435,6 +436,7 @@ function renderKPIs(){
     if(LIQUIDEZ_TICKERS.indexOf(r.ticker)>=0) liq += v;
   });
   var noLive = DATA.filter(function(r){ return !priceOf(r).live; }).length;
+  CAPITAL_TOTAL = capital;
   $('kpiCapital').textContent = fmtARS.format(capital);
   $('kpiCapitalSub').textContent = noLive ? (noLive+' líneas valorizadas a PPC (sin cotización)') : 'valorizado a precio de mercado';
   $('kpiLiq').textContent = LIQUIDEZ_TICKERS.length ? fmtARS.format(liq) : 'N/D';
@@ -470,10 +472,12 @@ function renderSearch(){
     var totNom=0, totVal=0, totCost=0;
     list.forEach(function(r){ totNom+=r.nominales; totVal+=valueOf(r); totCost+=costOf(r); });
     var totPnl=totVal-totCost, totPct=totCost>0?(totVal/totCost-1):0;
+    var pctAUM = CAPITAL_TOTAL>0 ? (totVal/CAPITAL_TOTAL*100) : null;
     html += '<div style="margin-bottom:18px">'+
       '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:8px;flex-wrap:wrap">'+
         '<span style="font-size:18px;font-weight:800;color:var(--gold)">'+tk+'</span>'+
         '<span class="muted">'+list.length+' cliente(s) · '+fmtNum.format(totNom)+' nominales</span>'+
+        (pctAUM!=null ? '<span class="tag broker" style="background:#3a3115;color:#f0c964">'+pctAUM.toFixed(1)+'% del capital total</span>' : '')+
         '<span style="margin-left:auto" class="mono">'+
            (QUOTES[tk]!=null? fmtARS.format(QUOTES[tk]) : '<span class="muted">s/cotización</span>')+
         '</span>'+
