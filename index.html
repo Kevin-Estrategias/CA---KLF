@@ -10,148 +10,151 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root{
-    --navy:#0F1A2E; --navy-2:#142338; --panel:#16233b; --panel-2:#1b2c48;
-    --gold:#D4AF37; --blue:#1E40AF; --blue-2:#2f57d6;
-    --txt:#E8EEF7; --muted:#8ea3c0; --line:#24344f;
-    --green:#2fbf71; --red:#e0555f; --amber:#e0a93a;
+    --navy:#0A1628; --navy-2:#0E1B30; --panel:#111F38; --panel-2:#162744;
+    --gold:#D4AF37; --teal:#00B4D8; --blue:#1E40AF;
+    --txt:#F0F4FA; --muted:#A0B4CC; --line:#1C2E4A;
+    --green:#34D399; --red:#F87171; --amber:#FBBF24;
+    --grad-accent:linear-gradient(135deg,var(--gold),var(--teal));
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
   body{
     background:var(--navy); color:var(--txt);
-    font-family:'Montserrat',system-ui,sans-serif; font-size:14px; line-height:1.45;
+    font-family:'Montserrat',system-ui,sans-serif; font-size:14px; line-height:1.5;
     -webkit-font-smoothing:antialiased;
   }
   .mono{font-family:'JetBrains Mono',ui-monospace,monospace; font-variant-numeric:tabular-nums}
-  h1,h2,h3{font-weight:800; letter-spacing:-.01em; margin:0}
+  h1,h2,h3{font-weight:800; letter-spacing:-.02em; margin:0}
   a{color:var(--gold)}
   button{font-family:inherit; cursor:pointer}
   .hidden{display:none !important}
 
+  /* ---------- Top brand line (PostLB: gold→teal 4px) ---------- */
+  body::before{content:"";position:fixed;top:0;left:0;right:0;height:3px;
+    background:var(--grad-accent);z-index:99}
+
   /* ---------- Topbar ---------- */
   header{
-    position:sticky; top:0; z-index:40;
-    background:linear-gradient(180deg,#0c1626, #0f1a2ecc); backdrop-filter:blur(6px);
-    border-bottom:1px solid var(--line);
-    display:flex; align-items:center; gap:20px; padding:0 22px; height:60px;
+    position:sticky; top:3px; z-index:40;
+    background:var(--navy); border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:20px; padding:0 28px; height:56px;
   }
-  .brand{display:flex; align-items:center; gap:11px; font-weight:800; font-size:16px}
-  .brand .dot{width:10px;height:10px;border-radius:2px;background:var(--gold);
-    box-shadow:0 0 12px var(--gold)}
-  .brand small{display:block;color:var(--muted);font-weight:600;font-size:10px;
-    letter-spacing:.14em;text-transform:uppercase}
-  nav{display:flex; gap:4px; margin-left:8px}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:800; font-size:15px; letter-spacing:-.01em}
+  .brand .dot{width:8px;height:8px;border-radius:2px;background:var(--gold)}
+  .brand small{display:block;color:var(--muted);font-weight:700;font-size:9px;
+    letter-spacing:.16em;text-transform:uppercase;opacity:.9}
+  nav{display:flex; gap:2px; margin-left:12px}
   nav button{
-    background:transparent; border:0; color:var(--muted); padding:9px 16px;
-    border-radius:8px; font-weight:600; font-size:13px; letter-spacing:.01em;
-    transition:.15s;
+    background:transparent; border:0; color:var(--muted); padding:8px 16px;
+    border-radius:6px; font-weight:700; font-size:12px; letter-spacing:.03em;
+    text-transform:uppercase; transition:.15s;
   }
-  nav button:hover{color:var(--txt); background:#ffffff08}
-  nav button.active{color:var(--navy); background:var(--gold)}
+  nav button:hover{color:var(--txt); background:#ffffff06}
+  nav button.active{color:var(--navy); background:var(--gold); border-radius:5px}
   .top-actions{margin-left:auto; display:flex; gap:8px; align-items:center}
   .icon-btn{
-    background:var(--panel); border:1px solid var(--line); color:var(--muted);
-    width:38px;height:38px;border-radius:9px; font-size:15px; display:grid;place-items:center;
+    background:transparent; border:1px solid var(--line); color:var(--muted);
+    width:36px;height:36px;border-radius:8px; font-size:15px; display:grid;place-items:center;
     transition:.15s;
   }
   .icon-btn:hover{color:var(--gold); border-color:var(--gold)}
-  .conn{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
-  .conn .led{width:8px;height:8px;border-radius:50%;background:var(--red)}
-  .conn.on .led{background:var(--green);box-shadow:0 0 8px var(--green)}
+  .conn{font-size:10px;color:var(--muted);display:flex;align-items:center;gap:6px;font-weight:600;letter-spacing:.04em}
+  .conn .led{width:7px;height:7px;border-radius:50%;background:var(--red)}
+  .conn.on .led{background:var(--green);box-shadow:0 0 6px var(--green)}
 
   /* ---------- Layout ---------- */
-  main{max-width:1280px; margin:0 auto; padding:26px 22px 80px}
-  .view{animation:fade .25s ease}
-  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  main{max-width:1240px; margin:0 auto; padding:28px 24px 80px}
+  .view{animation:fade .2s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
   .section-title{display:flex;align-items:center;gap:10px;margin:0 0 14px}
-  .section-title h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--txt)}
-  .section-title .bar{width:4px;height:16px;background:var(--gold);border-radius:2px}
+  .section-title h2{font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:var(--txt);font-weight:800}
+  .section-title .bar{width:3px;height:16px;background:var(--grad-accent);border-radius:2px}
   .muted{color:var(--muted)}
-  .note{font-size:11.5px;color:var(--muted);margin-top:6px}
+  .note{font-size:11px;color:var(--muted);margin-top:6px;opacity:.9}
 
   /* ---------- KPI cards ---------- */
-  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:26px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
   .kpi{
-    background:linear-gradient(160deg,var(--panel),var(--navy-2));
-    border:1px solid var(--line); border-radius:14px; padding:18px 18px 16px; position:relative;
-    overflow:hidden;
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:18px 16px 14px; position:relative; overflow:hidden;
   }
-  .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold);opacity:.85}
-  .kpi .label{font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:700}
-  .kpi .value{font-size:26px;font-weight:800;margin-top:9px}
-  .kpi .sub{font-size:11px;color:var(--muted);margin-top:4px}
-  .kpi.accent-blue::before{background:var(--blue-2)}
+  .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--grad-accent)}
+  .kpi .label{font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);font-weight:700}
+  .kpi .value{font-size:24px;font-weight:800;margin-top:8px;letter-spacing:-.01em}
+  .kpi .sub{font-size:10.5px;color:var(--muted);margin-top:3px}
+  .kpi.accent-blue::before{background:linear-gradient(180deg,var(--teal),var(--blue))}
 
   /* ---------- Panels ---------- */
   .panel{
-    background:var(--panel); border:1px solid var(--line); border-radius:14px;
-    padding:18px; margin-bottom:22px;
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:18px; margin-bottom:20px;
   }
-  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
   @media(max-width:900px){.grid-2{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}}
   @media(max-width:560px){.kpis{grid-template-columns:1fr}}
 
   /* ---------- Inputs ---------- */
-  label.fld{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;
-    color:var(--muted);font-weight:700;margin:0 0 6px}
+  label.fld{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.1em;
+    color:var(--muted);font-weight:700;margin:0 0 5px}
   input,select{
-    width:100%; background:var(--navy); border:1px solid var(--line); color:var(--txt);
-    border-radius:9px; padding:11px 13px; font-family:inherit; font-size:14px; outline:none; transition:.15s;
+    width:100%; background:var(--navy-2); border:1px solid var(--line); color:var(--txt);
+    border-radius:8px; padding:10px 13px; font-family:inherit; font-size:13px; outline:none; transition:.15s;
   }
-  input:focus,select:focus{border-color:var(--gold);box-shadow:0 0 0 3px #d4af3722}
-  input::placeholder{color:#5f7194}
+  input:focus,select:focus{border-color:var(--gold);box-shadow:0 0 0 2px #d4af3718}
+  input::placeholder{color:#4a6284}
   .btn{
-    background:var(--blue); border:1px solid var(--blue-2); color:#fff; font-weight:700;
-    padding:11px 18px; border-radius:9px; font-size:13px; transition:.15s; letter-spacing:.01em;
+    background:var(--blue); border:1px solid #2a4db8; color:#fff; font-weight:700;
+    padding:10px 18px; border-radius:8px; font-size:12px; transition:.15s;
+    letter-spacing:.02em; text-transform:uppercase;
   }
-  .btn:hover{background:var(--blue-2)}
+  .btn:hover{filter:brightness(1.12)}
   .btn.gold{background:var(--gold);border-color:var(--gold);color:var(--navy)}
-  .btn.gold:hover{filter:brightness(1.07)}
+  .btn.gold:hover{filter:brightness(1.08)}
   .btn.ghost{background:transparent;border-color:var(--line);color:var(--muted)}
   .btn.ghost:hover{color:var(--gold);border-color:var(--gold)}
-  .btn.danger{background:#3a1720;border-color:#5a2530;color:#ff9aa2}
-  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.danger{background:#2d1219;border-color:#4a1f28;color:var(--red)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
 
   /* ---------- Tables ---------- */
-  .tbl-wrap{overflow-x:auto;border-radius:11px;border:1px solid var(--line)}
+  .tbl-wrap{overflow-x:auto;border-radius:8px;border:1px solid var(--line)}
   table{width:100%;border-collapse:collapse;font-size:13px}
   thead th{
     background:var(--navy-2); color:var(--muted); text-align:left; font-weight:700;
-    font-size:10.5px; text-transform:uppercase; letter-spacing:.09em;
-    padding:11px 14px; border-bottom:1px solid var(--line); white-space:nowrap;
+    font-size:10px; text-transform:uppercase; letter-spacing:.1em;
+    padding:10px 14px; border-bottom:1px solid var(--line); white-space:nowrap;
   }
-  tbody td{padding:11px 14px;border-bottom:1px solid #1c2c46;white-space:nowrap}
+  tbody td{padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
   tbody tr:last-child td{border-bottom:0}
-  tbody tr:hover{background:#ffffff05}
+  tbody tr:hover{background:#ffffff04}
   td.num,th.num{text-align:right}
-  .tag{display:inline-block;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700;letter-spacing:.03em}
-  .tag.broker{background:#1f3252;color:#9dc0ff}
-  .sig{padding:4px 11px;border-radius:6px;font-weight:800;font-size:11px;letter-spacing:.04em}
-  .sig.COMPRA{background:#123726;color:#57e39a;border:1px solid #1c5a3e}
-  .sig.VENTA{background:#3a1720;color:#ff8b93;border:1px solid #5a2530}
-  .sig.MANTENER{background:#3a3115;color:#f0c964;border:1px solid #5a4a1c}
-  .sig.ND{background:#1e293c;color:var(--muted);border:1px solid var(--line)}
+  .tag{display:inline-block;padding:3px 10px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.04em}
+  .tag.broker{background:#152240;color:var(--teal)}
+  .sig{padding:4px 10px;border-radius:4px;font-weight:800;font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+  .sig.COMPRA{background:#0f2e1e;color:var(--green);border:1px solid #1a4a32}
+  .sig.VENTA{background:#2d1219;color:var(--red);border:1px solid #4a1f28}
+  .sig.MANTENER{background:#2a2510;color:var(--amber);border:1px solid #4a3d18}
+  .sig.ND{background:var(--navy-2);color:var(--muted);border:1px solid var(--line)}
 
   .empty{text-align:center;color:var(--muted);padding:40px 20px;font-size:13px}
-  .spinner{width:18px;height:18px;border:2px solid var(--line);border-top-color:var(--gold);
+  .spinner{width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--gold);
     border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:-3px}
   @keyframes spin{to{transform:rotate(360deg)}}
 
   /* ---------- Modal ---------- */
-  .overlay{position:fixed;inset:0;background:#060b16cc;backdrop-filter:blur(3px);
+  .overlay{position:fixed;inset:0;background:#040a14dd;backdrop-filter:blur(4px);
     display:grid;place-items:center;z-index:80;padding:20px}
-  .modal{background:var(--navy-2);border:1px solid var(--line);border-radius:16px;
+  .modal{background:var(--navy-2);border:1px solid var(--line);border-radius:12px;
     width:100%;max-width:640px;max-height:88vh;overflow:auto;padding:24px}
-  .modal h3{font-size:16px;margin-bottom:4px}
-  .modal .close-x{float:right;color:var(--muted);cursor:pointer;font-size:20px;line-height:1}
-  .modal.login{max-width:420px}
+  .modal h3{font-size:16px;margin-bottom:4px;font-weight:800}
+  .modal .close-x{float:right;color:var(--muted);cursor:pointer;font-size:18px;line-height:1}
+  .modal.login{max-width:400px}
   .est-buy{color:var(--green)} .est-sell{color:var(--red)}
   .arrow{color:var(--muted);padding:0 6px}
 
   /* toast */
   #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:120;
-    background:var(--navy-2);border:1px solid var(--gold);color:var(--txt);padding:13px 20px;
-    border-radius:11px;font-weight:600;font-size:13px;box-shadow:0 10px 30px #0008;opacity:0;
+    background:var(--navy-2);border:1px solid var(--gold);color:var(--txt);padding:12px 20px;
+    border-radius:8px;font-weight:700;font-size:12px;box-shadow:0 8px 24px #0006;opacity:0;
     transition:.25s;pointer-events:none}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
   #toast.err{border-color:var(--red)}
@@ -311,9 +314,9 @@ var LS = { token:'elb_pms_token_v1' };
 /* Tickers considerados efectivo/liquidez (agregá los que uses en la base). */
 var LIQUIDEZ_TICKERS = []; // ej: ['PESOS','USD','LIQUIDEZ']
 
-/* Moneda del PPC según el broker. IOL carga en pesos; Balanz en dólares.
-   El PPC de los brokers en USD se pasa a ARS con el CCL en vivo. */
-var BROKER_CCY = { IOL:'ARS', BALANZ:'USD' };
+/* Moneda del PPC: TODAS las carteras se cargan en dólares.
+   La web convierte a pesos con el CCL en vivo para mostrar. */
+var ALL_USD = true;
 
 var CFG = { url: WEB_APP_URL, token: localStorage.getItem(LS.token) || '' };
 var CCL = null; // dólar CCL en vivo
@@ -412,10 +415,9 @@ function loadQuotes(){
 function priceOf(r){ var q=QUOTES[r.ticker]; return (q!=null)? {px:q, live:true} : {px:r.ppc, live:false}; }
 function valueOf(r){ return r.nominales * priceOf(r).px; }
 
-/* PPC pasado a pesos según la moneda del broker */
+/* PPC pasado a pesos para calcular costo/resultado */
 function ppcARS(r){
-  var ccy = BROKER_CCY[String(r.broker).toUpperCase()] || 'ARS';
-  if(ccy==='USD' && CCL) return r.ppc * CCL;
+  if(ALL_USD && CCL) return r.ppc * CCL;
   return r.ppc;
 }
 function costOf(r){ return r.nominales * ppcARS(r); }        // capital invertido (ARS)
