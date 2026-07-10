@@ -174,6 +174,7 @@
     <button data-view="dashboard" class="active">Dashboard</button>
     <button data-view="ops">Operaciones</button>
     <button data-view="client">Por Cliente</button>
+    <button data-view="rend">Rendimiento</button>
   </nav>
   <div class="top-actions">
     <div class="conn" id="conn"><span class="led"></span><span id="connTxt">Sin conectar</span></div>
@@ -275,6 +276,35 @@
       <select id="clientSel" style="max-width:460px"><option value="">Elegí un cliente…</option></select>
     </div>
     <div id="clientBox"></div>
+  </section>
+
+  <!-- ============ RENDIMIENTO ============ -->
+  <section id="view-rend" class="view hidden">
+    <div class="kpis" id="rendKpis">
+      <div class="kpi"><div class="label">Capital Actual Total</div><div class="value mono" id="rCapActual">—</div><div class="sub">valorizado en vivo</div></div>
+      <div class="kpi accent-blue"><div class="label">Ganancia/Pérdida Global</div><div class="value mono" id="rGanancia">—</div><div class="sub" id="rGananciaSub"></div></div>
+      <div class="kpi"><div class="label">Tu Fee (20%)</div><div class="value mono" id="rFee">—</div><div class="sub">sobre ganancias positivas</div></div>
+      <div class="kpi"><div class="label">Contratos</div><div class="value mono" id="rContratos">—</div><div class="sub" id="rContratosSub"></div></div>
+    </div>
+
+    <div class="panel">
+      <div class="section-title"><span class="bar"></span><h2>Rendimiento por cliente</h2></div>
+      <p class="note" style="margin:0 0 12px">Doble click en Fecha o Valor Inicial para editar. El resultado se calcula con ingresos/egresos descontados.</p>
+      <button class="btn ghost" id="loadRendBtn" style="margin-bottom:14px">Cargar rendimiento</button>
+      <div id="rendBox"></div>
+    </div>
+
+    <div class="panel" id="flujosPanel" style="display:none">
+      <div class="section-title"><span class="bar"></span><h2 id="flujosTitle">Flujos de: —</h2></div>
+      <div id="flujosBox"></div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="flujoTipo" style="width:120px"><option value="INGRESO">Ingreso</option><option value="EGRESO">Egreso</option></select>
+        <input id="flujoFecha" type="date" style="width:150px">
+        <input id="flujoMonto" type="number" step="any" placeholder="Monto USD" style="width:140px" class="mono">
+        <input id="flujoNota" placeholder="Nota (opcional)" style="width:180px">
+        <button class="btn gold" onclick="addFlujo()">+ Agregar</button>
+      </div>
+    </div>
   </section>
 </main>
 
@@ -814,9 +844,185 @@ function deletePos(rowIdx){
   }).then(function(){renderClient()}).catch(function(err){toast(err.message,true);});
 }
 
+/* =================== RENDIMIENTO =================== */
+var CONTRATOS=[], FLUJOS=[];
+var selectedRendClient=null;
+
+function loadRendimiento(){
+  $('loadRendBtn').disabled=true; $('loadRendBtn').textContent='Cargando…';
+  Promise.all([
+    api({action:'getContratos'}),
+    api({action:'getFlujos'})
+  ]).then(function(res){
+    CONTRATOS=res[0].contratos||[];
+    FLUJOS=res[1].flujos||[];
+    renderRendimiento();
+  }).catch(function(err){ toast(err.message,true); })
+    .then(function(){ $('loadRendBtn').disabled=false; $('loadRendBtn').textContent='Cargar rendimiento'; });
+}
+
+function capitalActualCliente(nombre){
+  var total=0;
+  DATA.forEach(function(r){
+    if(r.cliente===nombre && r.ticker.indexOf('LIQUIDEZ')<0) total+=valueOf(r);
+  });
+  return total;
+}
+
+function flujosCliente(nombre){
+  return FLUJOS.filter(function(f){ return f.cliente===nombre; });
+}
+
+function calcRendimiento(c){
+  var capActual=capitalActualCliente(c.cliente);
+  var flujos=flujosCliente(c.cliente);
+  var ingresos=0, egresos=0;
+  flujos.forEach(function(f){
+    if(f.tipo==='INGRESO') ingresos+=f.monto;
+    else if(f.tipo==='EGRESO') egresos+=f.monto;
+  });
+  var capitalNeto = c.valorInicial + ingresos - egresos;
+  var resultado = capActual - capitalNeto;
+  var pct = capitalNeto>0 ? (resultado/capitalNeto*100) : 0;
+  var fee = resultado>0 ? resultado*(c.feePct/100) : 0;
+
+  var inicio = new Date(c.fechaInicio);
+  var hoy = new Date();
+  var meses = Math.round((hoy-inicio)/(1000*60*60*24*30.44));
+  var venc = new Date(inicio); venc.setMonth(venc.getMonth()+c.contratoMeses);
+  var diasVenc = Math.round((venc-hoy)/(1000*60*60*24));
+  var estado = diasVenc<0?'VENCIDO':diasVenc<15?'POR VENCER':'ACTIVO';
+
+  return {capActual:capActual, capitalNeto:capitalNeto, resultado:resultado, pct:pct, fee:fee,
+    meses:meses, venc:venc, diasVenc:diasVenc, estado:estado, ingresos:ingresos, egresos:egresos};
+}
+
+function renderRendimiento(){
+  if(!CONTRATOS.length){ $('rendBox').innerHTML='<div class="empty">No hay contratos cargados.</div>'; return; }
+
+  var totalCapActual=0, totalGanancia=0, totalFee=0, vencidos=0, porVencer=0, activos=0;
+  var rows=CONTRATOS.map(function(c){
+    var r=calcRendimiento(c);
+    totalCapActual+=r.capActual; totalGanancia+=r.resultado; totalFee+=r.fee;
+    if(r.estado==='VENCIDO') vencidos++; else if(r.estado==='POR VENCER') porVencer++; else activos++;
+    return {c:c,r:r};
+  }).sort(function(a,b){ return b.r.capActual-a.r.capActual; });
+
+  // KPIs
+  var win=totalGanancia>=0;
+  $('rCapActual').textContent=fmtUSD.format(totalCapActual);
+  $('rGanancia').textContent=(win?'+':'')+fmtUSD.format(totalGanancia);
+  $('rGanancia').className='value mono '+(win?'est-buy':'est-sell');
+  $('rGananciaSub').textContent=(win?'+':'')+(totalCapActual>0?(totalGanancia/(totalCapActual-totalGanancia)*100).toFixed(1):'0')+'% global';
+  $('rFee').textContent=fmtUSD.format(totalFee);
+  $('rContratos').textContent=activos+' activos';
+  $('rContratosSub').textContent=porVencer+' por vencer · '+vencidos+' vencidos';
+
+  // tabla
+  var html='<div class="tbl-wrap"><table><thead><tr>'+
+    '<th></th><th>Cliente</th><th class="num">Inicio</th><th class="num">V.Inicial</th>'+
+    '<th class="num">V.Actual</th><th class="num">Result. $</th><th class="num">Result. %</th>'+
+    '<th class="num">Fee 20%</th><th class="num">Meses</th><th>Contrato</th>'+
+    '</tr></thead><tbody>';
+
+  rows.forEach(function(o){
+    var c=o.c, r=o.r, w=r.resultado>=0;
+    var dot=r.estado==='VENCIDO'?'🔴':r.estado==='POR VENCER'?'🟡':'🟢';
+    var estadoTxt=r.estado==='VENCIDO'?'Vencido ('+Math.abs(r.diasVenc)+'d)':r.estado==='POR VENCER'?'Vence en '+r.diasVenc+'d':'Activo ('+r.diasVenc+'d)';
+    html+='<tr style="cursor:pointer" onclick="showFlujos(\''+c.cliente.replace(/'/g,"\\'")+'\','+c.row+')">'+
+      '<td>'+dot+'</td>'+
+      '<td style="font-weight:700">'+c.cliente+'</td>'+
+      '<td class="num mono rend-ed" data-row="'+c.row+'" data-field="fechaInicio">'+c.fechaInicio+'</td>'+
+      '<td class="num mono rend-ed" data-row="'+c.row+'" data-field="valorInicial">'+fmtUSD.format(c.valorInicial)+'</td>'+
+      '<td class="num mono">'+fmtUSD.format(r.capActual)+'</td>'+
+      '<td class="num mono '+(w?'est-buy':'est-sell')+'">'+(w?'+':'')+fmtUSD.format(r.resultado)+'</td>'+
+      '<td class="num mono '+(w?'est-buy':'est-sell')+'">'+(w?'+':'')+r.pct.toFixed(1)+'%</td>'+
+      '<td class="num mono">'+fmtUSD.format(r.fee)+'</td>'+
+      '<td class="num mono">'+r.meses+'</td>'+
+      '<td style="font-size:12px">'+estadoTxt+'</td>'+
+    '</tr>';
+  });
+  html+='<tr style="background:var(--navy-2)"><td></td><td style="font-weight:700">TOTAL</td><td></td><td></td>'+
+    '<td class="num mono" style="font-weight:700;color:var(--gold)">'+fmtUSD.format(totalCapActual)+'</td>'+
+    '<td class="num mono '+(win?'est-buy':'est-sell')+'" style="font-weight:700">'+(win?'+':'')+fmtUSD.format(totalGanancia)+'</td>'+
+    '<td></td><td class="num mono" style="font-weight:700;color:var(--gold)">'+fmtUSD.format(totalFee)+'</td>'+
+    '<td></td><td></td></tr>';
+  html+='</tbody></table></div>';
+  $('rendBox').innerHTML=html;
+
+  // hacer celdas editables
+  Array.prototype.forEach.call(document.querySelectorAll('.rend-ed'), function(cell){
+    cell.style.cursor='pointer';
+    cell.addEventListener('dblclick', function(e){
+      e.stopPropagation();
+      if(cell.querySelector('input')) return;
+      var field=cell.dataset.field, row=Number(cell.dataset.row);
+      var oldVal=field==='fechaInicio'?cell.textContent:cell.textContent.replace(/[^0-9.,-]/g,'').replace(/,/g,'');
+      var inp=document.createElement('input');
+      inp.type=field==='fechaInicio'?'date':'number';
+      if(inp.type==='number') inp.step='any';
+      inp.value=oldVal; inp.className='mono'; inp.style.cssText='width:120px;padding:4px 6px;font-size:12px';
+      cell.textContent=''; cell.appendChild(inp); inp.focus();
+      function save(){
+        var nv=inp.value;
+        if(!nv){cell.textContent=oldVal;return;}
+        cell.textContent='…';
+        var payload={action:'updateContrato',row:row};
+        payload[field]=field==='fechaInicio'?nv:parseFloat(nv);
+        api(payload).then(function(){ toast('✓ Guardado'); loadRendimiento(); })
+          .catch(function(err){cell.textContent=oldVal; toast(err.message,true);});
+      }
+      inp.addEventListener('blur',save);
+      inp.addEventListener('keydown',function(ev){if(ev.key==='Enter')save();if(ev.key==='Escape')cell.textContent=oldVal;});
+    });
+  });
+}
+
+function showFlujos(cliente,contratoRow){
+  selectedRendClient=cliente;
+  $('flujosPanel').style.display='block';
+  $('flujosTitle').textContent='Flujos de: '+cliente;
+  var fl=flujosCliente(cliente);
+  if(!fl.length){
+    $('flujosBox').innerHTML='<div class="muted" style="padding:10px">Sin ingresos ni egresos registrados. Usá el formulario de abajo para agregar.</div>';
+    return;
+  }
+  var html='<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Tipo</th><th class="num">Monto USD</th><th>Nota</th><th></th></tr></thead><tbody>';
+  fl.forEach(function(f){
+    var isIng=f.tipo==='INGRESO';
+    html+='<tr>'+
+      '<td class="mono">'+f.fecha+'</td>'+
+      '<td><span class="sig '+(isIng?'COMPRA':'VENTA')+'">'+(isIng?'INGRESO':'EGRESO')+'</span></td>'+
+      '<td class="num mono">'+(isIng?'+':'-')+fmtUSD.format(f.monto)+'</td>'+
+      '<td class="muted">'+f.nota+'</td>'+
+      '<td><span class="del-btn" onclick="delFlujo('+f.row+')" title="Eliminar">✕</span></td>'+
+    '</tr>';
+  });
+  html+='</tbody></table></div>';
+  $('flujosBox').innerHTML=html;
+}
+
+function addFlujo(){
+  if(!selectedRendClient){toast('Seleccioná un cliente',true);return;}
+  var tipo=$('flujoTipo').value, fecha=$('flujoFecha').value;
+  var monto=parseFloat($('flujoMonto').value)||0, nota=$('flujoNota').value;
+  if(!fecha){toast('Falta la fecha',true);return;}
+  if(!monto){toast('Falta el monto',true);return;}
+  api({action:'addFlujo',cliente:selectedRendClient,fecha:fecha,tipo:tipo,monto:monto,nota:nota})
+    .then(function(){ toast('✓ Flujo agregado'); $('flujoMonto').value=''; $('flujoNota').value=''; loadRendimiento(); })
+    .catch(function(err){toast(err.message,true);});
+}
+
+function delFlujo(row){
+  if(!confirm('¿Eliminar este flujo?')) return;
+  api({action:'deleteFlujo',row:row})
+    .then(function(){ toast('✓ Eliminado'); loadRendimiento(); })
+    .catch(function(err){toast(err.message,true);});
+}
+
 /* =================== NAVEGACIÓN / EVENTOS =================== */
 function switchView(v){
-  ['dashboard','ops','client'].forEach(function(x){ $('view-'+x).classList.toggle('hidden', x!==v); });
+  ['dashboard','ops','client','rend'].forEach(function(x){ $('view-'+x).classList.toggle('hidden', x!==v); });
   Array.prototype.forEach.call(document.querySelectorAll('#nav button'), function(b){ b.classList.toggle('active', b.dataset.view===v); });
 }
 
@@ -846,6 +1052,9 @@ document.addEventListener('DOMContentLoaded', function(){
   // cliente
   $('clientSel').addEventListener('change', renderClient);
   updateValueLabel();
+
+  // rendimiento
+  $('loadRendBtn').addEventListener('click', loadRendimiento);
 
   if(CFG.token) loadData(); else openModal('loginModal');
 });
