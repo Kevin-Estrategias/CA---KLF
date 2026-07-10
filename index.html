@@ -919,19 +919,17 @@ function renderRendimiento(){
   $('rContratos').textContent=activos+' activos';
   $('rContratosSub').textContent=porVencer+' por vencer · '+vencidos+' vencidos';
 
-  // tabla
-  var html='<div class="tbl-wrap"><table><thead><tr>'+
+  // SECCIÓN 1: Rendimiento
+  var html='<div class="section-title" style="margin-top:8px"><span class="bar"></span><h2>Rendimiento</h2></div>'+
+    '<div class="tbl-wrap" style="margin-bottom:22px"><table><thead><tr>'+
     '<th></th><th>Cliente</th><th class="num">Inicio</th><th class="num">V.Inicial</th>'+
     '<th class="num">V.Actual</th><th class="num">G.Bruta</th><th class="num">%</th>'+
-    '<th class="num">Honorarios 20%</th><th class="num">G.Neta</th><th class="num">Meses</th><th>Contrato</th>'+
     '</tr></thead><tbody>';
 
   rows.forEach(function(o){
     var c=o.c, r=o.r, w=r.resultado>=0;
-    var neta=r.resultado-r.fee; // ganancia neta = bruta - honorarios
     var dot=r.estado==='VENCIDO'?'🔴':r.estado==='POR VENCER'?'🟡':'🟢';
-    var estadoTxt=r.estado==='VENCIDO'?'Vencido ('+Math.abs(r.diasVenc)+'d)':r.estado==='POR VENCER'?'Vence en '+r.diasVenc+'d':'Activo ('+r.diasVenc+'d)';
-    html+='<tr style="cursor:pointer" onclick="showFlujos(\''+c.cliente.replace(/'/g,"\\'")+'\','+c.row+')">'+
+    html+='<tr>'+
       '<td>'+dot+'</td>'+
       '<td style="font-weight:700">'+c.cliente+'</td>'+
       '<td class="num mono rend-ed" data-row="'+c.row+'" data-field="fechaInicio">'+c.fechaInicio+'</td>'+
@@ -939,6 +937,29 @@ function renderRendimiento(){
       '<td class="num mono">'+fmtUSD.format(r.capActual)+'</td>'+
       '<td class="num mono '+(w?'est-buy':'est-sell')+'">'+(w?'+':'')+fmtUSD.format(r.resultado)+'</td>'+
       '<td class="num mono '+(w?'est-buy':'est-sell')+'">'+(w?'+':'')+r.pct.toFixed(1)+'%</td>'+
+    '</tr>';
+  });
+  html+='<tr style="background:var(--navy-2)"><td></td><td style="font-weight:700">TOTAL</td><td></td><td></td>'+
+    '<td class="num mono" style="font-weight:700;color:var(--gold)">'+fmtUSD.format(totalCapActual)+'</td>'+
+    '<td class="num mono '+(win?'est-buy':'est-sell')+'" style="font-weight:700">'+(win?'+':'')+fmtUSD.format(totalGanancia)+'</td>'+
+    '<td></td></tr>';
+  html+='</tbody></table></div>';
+
+  // SECCIÓN 2: Honorarios y Contratos
+  html+='<div class="section-title"><span class="bar"></span><h2>Honorarios y contratos</h2></div>'+
+    '<div class="tbl-wrap"><table><thead><tr>'+
+    '<th></th><th>Cliente</th><th class="num">Honorarios 20%</th><th class="num">G.Neta</th>'+
+    '<th class="num">Meses</th><th>Contrato</th>'+
+    '</tr></thead><tbody>';
+
+  rows.forEach(function(o){
+    var c=o.c, r=o.r, w=r.resultado>=0;
+    var neta=r.resultado-r.fee;
+    var dot=r.estado==='VENCIDO'?'🔴':r.estado==='POR VENCER'?'🟡':'🟢';
+    var estadoTxt=r.estado==='VENCIDO'?'Vencido ('+Math.abs(r.diasVenc)+'d)':r.estado==='POR VENCER'?'Vence en '+r.diasVenc+'d':'Activo ('+r.diasVenc+'d)';
+    html+='<tr style="cursor:pointer" onclick="showFlujos(\''+c.cliente.replace(/'/g,"\\'")+'\','+c.row+')">'+
+      '<td>'+dot+'</td>'+
+      '<td style="font-weight:700">'+c.cliente+'</td>'+
       '<td class="num mono">'+(r.fee>0?fmtUSD.format(r.fee):'—')+'</td>'+
       '<td class="num mono '+(w?'est-buy':'est-sell')+'">'+(w?'+':'')+fmtUSD.format(neta)+'</td>'+
       '<td class="num mono">'+r.meses+'</td>'+
@@ -946,10 +967,7 @@ function renderRendimiento(){
     '</tr>';
   });
   var totalNeta=totalGanancia-totalFee;
-  html+='<tr style="background:var(--navy-2)"><td></td><td style="font-weight:700">TOTAL</td><td></td><td></td>'+
-    '<td class="num mono" style="font-weight:700;color:var(--gold)">'+fmtUSD.format(totalCapActual)+'</td>'+
-    '<td class="num mono '+(win?'est-buy':'est-sell')+'" style="font-weight:700">'+(win?'+':'')+fmtUSD.format(totalGanancia)+'</td>'+
-    '<td></td>'+
+  html+='<tr style="background:var(--navy-2)"><td></td><td style="font-weight:700">TOTAL</td>'+
     '<td class="num mono" style="font-weight:700;color:var(--gold)">'+fmtUSD.format(totalFee)+'</td>'+
     '<td class="num mono '+(win?'est-buy':'est-sell')+'" style="font-weight:700">'+(win?'+':'')+fmtUSD.format(totalNeta)+'</td>'+
     '<td></td><td></td></tr>';
