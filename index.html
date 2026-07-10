@@ -1,163 +1,831 @@
-/*************************************************************************
- *  EstrategiasLB · PMS v4  ·  BACKEND (Apps Script)
- *  Todo en USD. Acciones: getData, quotes, signals, blockTrade,
- *  updateCell, addPosition, deletePosition, setLiquidity
- *************************************************************************/
-const SHEET_NAME = 'Base_Consolidada';
-const TOKEN      = 'admin456'; // <-- CAMBIAR
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EstrategiasLB · Portfolio Management System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --navy:#0A1628; --navy-2:#0E1B30; --panel:#111F38; --panel-2:#162744;
+    --gold:#D4AF37; --teal:#00B4D8; --blue:#1E40AF;
+    --txt:#F0F4FA; --muted:#A0B4CC; --line:#1C2E4A;
+    --green:#34D399; --red:#F87171; --amber:#FBBF24;
+    --grad-accent:linear-gradient(135deg,var(--gold),var(--teal));
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--navy); color:var(--txt);
+    font-family:'Montserrat',system-ui,sans-serif; font-size:14px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:'JetBrains Mono',ui-monospace,monospace; font-variant-numeric:tabular-nums}
+  h1,h2,h3{font-weight:800; letter-spacing:-.02em; margin:0}
+  a{color:var(--gold)}
+  button{font-family:inherit; cursor:pointer}
+  .hidden{display:none !important}
 
-const COL = { broker:0, cliente:1, ticker:2, nominales:3, ppc:4, moneda:5 };
-const NO_SIGNAL = ['GD41','GD30','GD35','GD29','AL30','AL29','AL35','AE38','S30N6','X30S6','T15E7','TX26','TX28','BPOC7','EMBJ','TLCMO'];
+  /* ---------- Top brand line (PostLB: gold→teal 4px) ---------- */
+  body::before{content:"";position:fixed;top:0;left:0;right:0;height:3px;
+    background:var(--grad-accent);z-index:99}
 
-const YAHOO_OVERRIDE = {
-  BRKB:'BRK-B', GGAL:'GGAL.BA', PAMP:'PAMP.BA', YPFD:'YPFD.BA', BMA:'BMA.BA',
-  CRES:'CRES.BA', EDN:'EDN.BA', TRAN:'TRAN.BA', TGSU2:'TGSU2.BA',
-  LOMA:'LOMA.BA', MIRG:'MIRG.BA', COME:'COME.BA', CEPU:'CEPU.BA',
-  METR:'METR.BA', VALO:'VALO.BA', BYMA:'BYMA.BA', IRSA:'IRSA.BA',
-  AGRO:'AGRO.BA', HARG:'HARG.BA', HAVA:'HAVA.BA'
-};
+  /* ---------- Topbar ---------- */
+  header{
+    position:sticky; top:3px; z-index:40;
+    background:var(--navy); border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:20px; padding:0 28px; height:56px;
+  }
+  .brand{display:flex; align-items:center; gap:10px; font-weight:800; font-size:15px; letter-spacing:-.01em}
+  .brand .dot{width:8px;height:8px;border-radius:2px;background:var(--gold)}
+  .brand small{display:block;color:var(--muted);font-weight:700;font-size:9px;
+    letter-spacing:.16em;text-transform:uppercase;opacity:.9}
+  nav{display:flex; gap:2px; margin-left:12px}
+  nav button{
+    background:transparent; border:0; color:var(--muted); padding:8px 16px;
+    border-radius:6px; font-weight:700; font-size:12px; letter-spacing:.03em;
+    text-transform:uppercase; transition:.15s;
+  }
+  nav button:hover{color:var(--txt); background:#ffffff06}
+  nav button.active{color:var(--navy); background:var(--gold); border-radius:5px}
+  .top-actions{margin-left:auto; display:flex; gap:8px; align-items:center}
+  .icon-btn{
+    background:transparent; border:1px solid var(--line); color:var(--muted);
+    width:36px;height:36px;border-radius:8px; font-size:15px; display:grid;place-items:center;
+    transition:.15s;
+  }
+  .icon-btn:hover{color:var(--gold); border-color:var(--gold)}
+  .conn{font-size:10px;color:var(--muted);display:flex;align-items:center;gap:6px;font-weight:600;letter-spacing:.04em}
+  .conn .led{width:7px;height:7px;border-radius:50%;background:var(--red)}
+  .conn.on .led{background:var(--green);box-shadow:0 0 6px var(--green)}
 
-function doGet(e){return handle(e)} function doPost(e){return handle(e)}
-function handle(e){
-  try{
-    var p={};
-    if(e&&e.parameter) for(var k in e.parameter) p[k]=e.parameter[k];
-    if(e&&e.postData&&e.postData.contents){try{var b=JSON.parse(e.postData.contents);for(var j in b)p[j]=b[j]}catch(_){}}
-    if(p.token!==TOKEN) return json({ok:false,error:'Token inválido'});
-    switch(p.action){
-      case 'getData':       return json({ok:true,data:getData()});
-      case 'quotes':        return json({ok:true,quotes:getQuotes(asList(p.tickers))});
-      case 'signals':       return json({ok:true,signals:getSignals(asList(p.tickers))});
-      case 'blockTrade':    return json(blockTrade(p));
-      case 'updateCell':    return json(updateCell(p));
-      case 'addPosition':   return json(addPosition(p));
-      case 'deletePosition':return json(deletePosition(p));
-      case 'setLiquidity':  return json(setLiquidity(p));
-      default: return json({ok:false,error:'Acción desconocida'});
-    }
-  }catch(err){return json({ok:false,error:String(err)})}
+  /* ---------- Layout ---------- */
+  main{max-width:1240px; margin:0 auto; padding:28px 24px 80px}
+  .view{animation:fade .2s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+  .section-title{display:flex;align-items:center;gap:10px;margin:0 0 14px}
+  .section-title h2{font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:var(--txt);font-weight:800}
+  .section-title .bar{width:3px;height:16px;background:var(--grad-accent);border-radius:2px}
+  .muted{color:var(--muted)}
+  .note{font-size:11px;color:var(--muted);margin-top:6px;opacity:.9}
+
+  /* ---------- KPI cards ---------- */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+  .kpi{
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:18px 16px 14px; position:relative; overflow:hidden;
+  }
+  .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--grad-accent)}
+  .kpi .label{font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);font-weight:700}
+  .kpi .value{font-size:24px;font-weight:800;margin-top:8px;letter-spacing:-.01em}
+  .kpi .sub{font-size:10.5px;color:var(--muted);margin-top:3px}
+  .kpi.accent-blue::before{background:linear-gradient(180deg,var(--teal),var(--blue))}
+
+  /* ---------- Panels ---------- */
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:18px; margin-bottom:20px;
+  }
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:900px){.grid-2{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.kpis{grid-template-columns:1fr}}
+
+  /* ---------- Inputs ---------- */
+  label.fld{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.1em;
+    color:var(--muted);font-weight:700;margin:0 0 5px}
+  input,select{
+    width:100%; background:var(--navy-2); border:1px solid var(--line); color:var(--txt);
+    border-radius:8px; padding:10px 13px; font-family:inherit; font-size:13px; outline:none; transition:.15s;
+  }
+  input:focus,select:focus{border-color:var(--gold);box-shadow:0 0 0 2px #d4af3718}
+  input::placeholder{color:#4a6284}
+  .btn{
+    background:var(--blue); border:1px solid #2a4db8; color:#fff; font-weight:700;
+    padding:10px 18px; border-radius:8px; font-size:12px; transition:.15s;
+    letter-spacing:.02em; text-transform:uppercase;
+  }
+  .btn:hover{filter:brightness(1.12)}
+  .btn.gold{background:var(--gold);border-color:var(--gold);color:var(--navy)}
+  .btn.gold:hover{filter:brightness(1.08)}
+  .btn.ghost{background:transparent;border-color:var(--line);color:var(--muted)}
+  .btn.ghost:hover{color:var(--gold);border-color:var(--gold)}
+  .btn.danger{background:#2d1219;border-color:#4a1f28;color:var(--red)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+
+  /* ---------- Tables ---------- */
+  .tbl-wrap{overflow-x:auto;border-radius:8px;border:1px solid var(--line)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{
+    background:var(--navy-2); color:var(--muted); text-align:left; font-weight:700;
+    font-size:10px; text-transform:uppercase; letter-spacing:.1em;
+    padding:10px 14px; border-bottom:1px solid var(--line); white-space:nowrap;
+  }
+  tbody td{padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:#ffffff04}
+  td.num,th.num{text-align:right}
+  .tag{display:inline-block;padding:3px 10px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.04em}
+  .tag.broker{background:#152240;color:var(--teal)}
+  .sig{padding:4px 10px;border-radius:4px;font-weight:800;font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+  .sig.COMPRA{background:#0f2e1e;color:var(--green);border:1px solid #1a4a32}
+  .sig.VENTA{background:#2d1219;color:var(--red);border:1px solid #4a1f28}
+  .sig.MANTENER{background:#2a2510;color:var(--amber);border:1px solid #4a3d18}
+  .sig.ND{background:var(--navy-2);color:var(--muted);border:1px solid var(--line)}
+
+  .empty{text-align:center;color:var(--muted);padding:40px 20px;font-size:13px}
+  .ed:hover{background:#ffffff08;outline:1px dashed var(--gold);outline-offset:-2px}
+  .del-btn{color:var(--muted);cursor:pointer;font-size:12px;opacity:.5;transition:.15s}
+  .del-btn:hover{color:var(--red);opacity:1}
+  .spinner{width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--gold);
+    border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:-3px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ---------- Modal ---------- */
+  .overlay{position:fixed;inset:0;background:#040a14dd;backdrop-filter:blur(4px);
+    display:grid;place-items:center;z-index:80;padding:20px}
+  .modal{background:var(--navy-2);border:1px solid var(--line);border-radius:12px;
+    width:100%;max-width:640px;max-height:88vh;overflow:auto;padding:24px}
+  .modal h3{font-size:16px;margin-bottom:4px;font-weight:800}
+  .modal .close-x{float:right;color:var(--muted);cursor:pointer;font-size:18px;line-height:1}
+  .modal.login{max-width:400px}
+  .est-buy{color:var(--green)} .est-sell{color:var(--red)}
+  .arrow{color:var(--muted);padding:0 6px}
+
+  /* toast */
+  #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:120;
+    background:var(--navy-2);border:1px solid var(--gold);color:var(--txt);padding:12px 20px;
+    border-radius:8px;font-weight:700;font-size:12px;box-shadow:0 8px 24px #0006;opacity:0;
+    transition:.25s;pointer-events:none}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+  #toast.err{border-color:var(--red)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="dot"></span>
+    <div>Portfolio Management System <small>EstrategiasLB</small></div>
+  </div>
+  <nav id="nav">
+    <button data-view="dashboard" class="active">Dashboard</button>
+    <button data-view="ops">Operaciones</button>
+    <button data-view="client">Por Cliente</button>
+  </nav>
+  <div class="top-actions">
+    <div class="conn" id="conn"><span class="led"></span><span id="connTxt">Sin conectar</span></div>
+    <button class="icon-btn" id="refreshBtn" title="Actualizar datos y precios">⟳</button>
+    <button class="icon-btn" id="logoutBtn" title="Salir">⎋</button>
+  </div>
+</header>
+
+<main>
+  <!-- ============ DASHBOARD ============ -->
+  <section id="view-dashboard" class="view">
+    <div class="kpis" id="kpis">
+      <div class="kpi"><div class="label">Capital Total Administrado</div><div class="value mono" id="kpiCapital">—</div><div class="sub" id="kpiCapitalSub">valorizado en USD a precio de mercado</div></div>
+      <div class="kpi accent-blue"><div class="label">Liquidez Global</div><div class="value mono" id="kpiLiq">—</div><div class="sub" id="kpiLiqSub">sin filas de efectivo en la base</div></div>
+      <div class="kpi"><div class="label">Clientes</div><div class="value mono" id="kpiClientes">—</div><div class="sub">carteras activas</div></div>
+      <div class="kpi"><div class="label">Posiciones / Tickers</div><div class="value mono" id="kpiPos">—</div><div class="sub" id="kpiPosSub">líneas en la base</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="section-title"><span class="bar"></span><h2>Buscador de tickers</h2></div>
+      <input id="search" list="tickerList" placeholder="Escribí un ticker (ej: MSFT, GGAL, NU) y ver quién lo tiene…" autocomplete="off">
+      <datalist id="tickerList"></datalist>
+      <div id="searchResult" style="margin-top:16px"></div>
+    </div>
+
+    <div class="panel">
+      <div class="section-title" style="margin-bottom:6px">
+        <span class="bar"></span><h2>Señales · Medias móviles (11 / 21 / 200)</h2>
+      </div>
+      <p class="note" style="margin:0 0 12px">
+        Cruce del precio del subyacente con sus MAs. CEDEAR → símbolo en USD · acción local → <span class="mono">.BA</span> · bonos/letras sin señal.
+      </p>
+      <button class="btn ghost" id="calcSignals">Calcular señales</button>
+      <div id="signalsBox" style="margin-top:16px"></div>
+    </div>
+  </section>
+
+  <!-- ============ OPERACIONES ============ -->
+  <section id="view-ops" class="view hidden">
+    <div class="grid-2">
+      <div class="panel" style="margin:0">
+        <div class="section-title"><span class="bar"></span><h2>Operación global (Block Trade)</h2></div>
+        <p class="note" style="margin:0 0 16px">
+          Impacta a <b>todos los clientes</b> que tengan el ticker. Primero simulá, revisá el detalle y recién ahí confirmás.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div>
+            <label class="fld">Ticker</label>
+            <input id="opTicker" list="tickerList2" placeholder="MSFT" autocomplete="off">
+            <datalist id="tickerList2"></datalist>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div>
+              <label class="fld">Acción</label>
+              <select id="opSide"><option value="VENTA">Venta</option><option value="COMPRA">Compra</option></select>
+            </div>
+            <div>
+              <label class="fld">Modo</label>
+              <select id="opMode"><option value="porcentaje">% de cada posición</option><option value="nominales">Nominales por cliente</option></select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div>
+              <label class="fld" id="opValueLbl">Porcentaje (%)</label>
+              <input id="opValue" class="mono" type="number" min="0" step="any" placeholder="25">
+            </div>
+            <div>
+              <label class="fld">Precio de ejecución (ARS)</label>
+              <input id="opPrice" class="mono" type="number" min="0" step="any" placeholder="opcional en ventas">
+            </div>
+          </div>
+          <button class="btn gold" id="simBtn" style="margin-top:4px">Simular impacto</button>
+          <div id="opMsg" class="hidden" style="margin-top:6px;font-size:12.5px;padding:11px 13px;border-radius:9px"></div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin:0">
+        <div class="section-title"><span class="bar"></span><h2>Guía rápida</h2></div>
+        <ul style="margin:0;padding-left:18px;color:var(--muted);font-size:13px;line-height:1.9">
+          <li><b style="color:var(--txt)">% de cada posición:</b> vende/compra ese % sobre la tenencia individual de cada cliente (ideal para rebalanceos).</li>
+          <li><b style="color:var(--txt)">Nominales por cliente:</b> aplica esa cantidad fija a cada cliente (se topea en 0 en ventas).</li>
+          <li>En <b style="color:var(--txt)">compras</b>, el PPC se recalcula ponderado con el precio de ejecución.</li>
+          <li>En <b style="color:var(--txt)">ventas</b>, el PPC no cambia; si la posición queda en 0 la fila queda en 0.</li>
+          <li>Nada se escribe hasta que confirmás en la ventana de simulación.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ POR CLIENTE ============ -->
+  <section id="view-client" class="view hidden">
+    <div class="panel">
+      <div class="section-title"><span class="bar"></span><h2>Cartera por cliente</h2></div>
+      <select id="clientSel" style="max-width:460px"><option value="">Elegí un cliente…</option></select>
+    </div>
+    <div id="clientBox"></div>
+  </section>
+</main>
+
+<!-- ============ MODALES ============ -->
+<div class="overlay hidden" id="loginModal">
+  <div class="modal login">
+    <div class="brand" style="justify-content:center;margin-bottom:6px">
+      <span class="dot"></span>
+      <div style="text-align:center">Portfolio Management System <small>EstrategiasLB</small></div>
+    </div>
+    <h3 style="text-align:center;margin-top:10px">Acceso privado</h3>
+    <p class="muted" style="text-align:center;margin:4px 0 20px;font-size:12.5px">
+      Ingresá la contraseña del equipo para ver las carteras.
+    </p>
+    <label class="fld">Contraseña</label>
+    <input id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password">
+    <div id="loginErr" class="hidden" style="color:var(--red);font-size:12.5px;margin-top:9px"></div>
+    <button class="btn gold" id="loginBtn" style="width:100%;margin-top:18px">Entrar</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="simModal">
+  <div class="modal">
+    <span class="close-x" data-close="simModal">✕</span>
+    <h3 id="simTitle">Simulación</h3>
+    <p class="muted" id="simSub" style="margin:4px 0 16px;font-size:12.5px"></p>
+    <div id="simBody"></div>
+    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end">
+      <button class="btn ghost" data-close="simModal">Cancelar</button>
+      <button class="btn danger" id="confirmTradeBtn">Confirmar y ejecutar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* =================== ESTADO / CONFIG =================== */
+/* URL del Web App de Apps Script. NO es secreta: sin el token/contraseña
+   correcto el backend no devuelve nada. Podés dejarla fija acá. */
+var WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzPC1wL_6JZEfmBSfeJpkvFjNRN_PBUIjELK8hg15GGhZwRdDtfpHaCF9XL6FTEM_1A/exec';
+
+var LS = { token:'elb_pms_token_v1' };
+/* Tickers considerados efectivo/liquidez (agregá los que uses en la base). */
+var LIQUIDEZ_TICKERS = []; // ej: ['PESOS','USD','LIQUIDEZ']
+
+/* Moneda del PPC: TODAS las carteras se cargan en dólares.
+   La web convierte a pesos con el CCL en vivo para mostrar. */
+var ALL_USD = true;
+
+var CFG = { url: WEB_APP_URL, token: localStorage.getItem(LS.token) || '' };
+var CCL = null; // dólar CCL en vivo
+var DATA = [];            // [{broker,cliente,ticker,nominales,ppc}]
+var QUOTES = {};          // {ticker: price|null}
+var CAPITAL_TOTAL = 0;    // capital administrado total (para % de cartera en buscador)
+var pendingTrade = null;  // payload del block trade a confirmar
+
+var fmtUSD = new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0});
+var fmtNum = new Intl.NumberFormat('es-AR',{maximumFractionDigits:0});
+var fmtPx  = new Intl.NumberFormat('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+/* =================== HELPERS DOM =================== */
+function $(id){ return document.getElementById(id); }
+function el(tag, attrs, html){ var e=document.createElement(tag); if(attrs) for(var k in attrs) e.setAttribute(k,attrs[k]); if(html!=null) e.innerHTML=html; return e; }
+function toast(msg, isErr){ var t=$('toast'); t.textContent=msg; t.className=isErr?'show err':'show'; setTimeout(function(){t.className='';},2800); }
+function openModal(id){ $(id).classList.remove('hidden'); }
+function closeModal(id){ $(id).classList.add('hidden'); }
+
+/* =================== API =================== */
+function api(payload){
+  if(!CFG.url || !CFG.token) return Promise.reject(new Error('Configurá la conexión (⚙)'));
+  payload.token = CFG.token;
+  // POST text/plain => "simple request" => sin preflight CORS
+  return fetch(CFG.url, { method:'POST', body: JSON.stringify(payload) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){ if(!j.ok) throw new Error(j.error||'Error del backend'); return j; });
 }
-function json(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON)}
-function asList(v){if(!v)return[];if(Array.isArray(v))return v;return String(v).split(',').map(function(s){return s.trim()}).filter(Boolean)}
-function getSheet(){var s=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);if(!s)throw'No existe hoja '+SHEET_NAME;return s}
 
-/* =================== LECTURA =================== */
-function getData(){
-  var values=getSheet().getDataRange().getValues();values.shift();
-  return values.filter(function(r){return r[COL.broker]}).map(function(r){
-    return{broker:String(r[COL.broker]).trim(),cliente:String(r[COL.cliente]).trim(),
-      ticker:String(r[COL.ticker]).trim().toUpperCase(),nominales:Number(r[COL.nominales])||0,
-      ppc:Number(r[COL.ppc])||0,moneda:String(r[COL.moneda]||'USD').trim()};
+/* =================== CARGA DE DATOS =================== */
+function setConn(on){ var c=$('conn'); c.className='conn'+(on?' on':''); $('connTxt').textContent=on?'Conectado':'Sin conectar'; }
+
+function loadData(){
+  if(!CFG.token){ openModal('loginModal'); return; }
+  $('kpiCapital').innerHTML='<span class="spinner"></span>';
+  api({action:'getData'}).then(function(j){
+    DATA = j.data || [];
+    setConn(true);
+    fillTickerLists();
+    fillClientSelect();
+    renderKPIs();
+    return loadQuotes();
+  }).then(function(){
+    renderKPIs();
+    if($('search').value) renderSearch();
+    if($('clientSel').value) renderClient();
+  }).catch(function(err){
+    setConn(false);
+    $('kpiCapital').textContent='—';
+    if(String(err.message).indexOf('Token')>=0 || String(err.message).indexOf('Configurá')>=0){
+      logout(); // contraseña mala o vencida -> volver al login
+    } else {
+      toast(err.message, true);
+    }
   });
 }
 
-/* =================== PRECIOS (data912 → USD) =================== */
-function isBondOrLetra(t){t=String(t).toUpperCase();return/^(AL|AE|GD)\d{2}$/.test(t)||/^[SXT]\d{2}[A-Z]\d$/.test(t)||/^BPO[A-Z]\d$/.test(t)||NO_SIGNAL.indexOf(t)>=0}
-
-function getCCL(){
-  var cache=CacheService.getScriptCache(),c=cache.get('ccl');if(c)return Number(c);
-  try{var r=UrlFetchApp.fetch('https://dolarapi.com/v1/dolares/contadoconliqui',{muteHttpExceptions:true});
-    if(r.getResponseCode()===200){var j=JSON.parse(r.getContentText()),v=Number(j.venta||j.promedio||j.compra);
-      if(v>0){cache.put('ccl',String(v),300);return v}}}catch(_){}return null;
+function doLogin(){
+  var pass = $('loginPass').value.trim();
+  if(!pass){ return; }
+  CFG.token = pass;
+  var btn=$('loginBtn'); btn.disabled=true; btn.textContent='Entrando…';
+  $('loginErr').classList.add('hidden');
+  api({action:'getData'}).then(function(j){
+    DATA = j.data || [];
+    localStorage.setItem(LS.token, pass);
+    closeModal('loginModal');
+    setConn(true); fillTickerLists(); fillClientSelect(); renderKPIs();
+    return loadQuotes();
+  }).then(function(){ renderKPIs(); })
+  .catch(function(err){
+    CFG.token='';
+    $('loginErr').textContent = (String(err.message).indexOf('Token')>=0) ? 'Contraseña incorrecta.' : err.message;
+    $('loginErr').classList.remove('hidden');
+  }).then(function(){ btn.disabled=false; btn.textContent='Entrar'; });
 }
 
-function getQuotes(tickers){
-  var map=data912Map(),ccl=getCCL()||1;var out={};
-  tickers.forEach(function(t){var key=String(t).trim().toUpperCase();var px=map[key]!=null?map[key]:null;
-    if(px!=null){if(isBondOrLetra(key))px=px/100;px=px/ccl;} // ARS→USD
-    out[key]=px!=null?round2(px):null;});
-  out._ccl=ccl; return out;
+function logout(){
+  localStorage.removeItem(LS.token);
+  CFG.token=''; DATA=[]; setConn(false);
+  $('loginPass').value=''; $('loginErr').classList.add('hidden');
+  openModal('loginModal');
 }
 
-function data912Map(){
-  var cache=CacheService.getScriptCache(),cached=cache.get('d912');if(cached)return JSON.parse(cached);
-  var eps=['arg_stocks','arg_cedears','arg_bonds','arg_notes','arg_corp'],map={};
-  eps.forEach(function(ep){try{var r=UrlFetchApp.fetch('https://data912.com/live/'+ep,{muteHttpExceptions:true});
-    if(r.getResponseCode()!==200)return;var arr=JSON.parse(r.getContentText());if(!Array.isArray(arr))return;
-    arr.forEach(function(o){var sym=(o.symbol||o.ticker||'').toString().trim().toUpperCase();
-      var px=o.c!=null?o.c:o.px_ask!=null?o.px_ask:o.last!=null?o.last:o.price;
-      if(sym&&px!=null&&map[sym]===undefined)map[sym]=Number(px)})}catch(_){}});
-  cache.put('d912',JSON.stringify(map),60);return map;
+function uniqueTickers(){ var s={}; DATA.forEach(function(r){ s[r.ticker]=1; }); return Object.keys(s).sort(); }
+function uniqueClients(){ var s={}; DATA.forEach(function(r){ s[r.cliente]=1; }); return Object.keys(s).sort(); }
+
+function loadQuotes(){
+  var tks = uniqueTickers();
+  if(!tks.length) return Promise.resolve();
+  return api({action:'quotes', tickers:tks}).then(function(j){ QUOTES=j.quotes||{}; })
+    .catch(function(){ /* precios opcionales; seguimos con lo que haya */ });
 }
 
-/* =================== SEÑALES (Yahoo, M11/M21/M200) =================== */
-function getSignals(tickers){var cache=CacheService.getScriptCache(),out={};
-  tickers.forEach(function(t){var key=String(t).trim().toUpperCase();
-    if(NO_SIGNAL.indexOf(key)>=0){out[key]={estado:'N/D',motivo:'bono/letra'};return}
-    var cached=cache.get('sig_'+key);if(cached){out[key]=JSON.parse(cached);return}
-    var sig=computeSignal(key);out[key]=sig;try{cache.put('sig_'+key,JSON.stringify(sig),21600)}catch(_){}});return out}
+/* precio efectivo: vivo si existe; si no, PPC (marcado con *) */
+function priceOf(r){ var q=QUOTES[r.ticker]; return (q!=null)? {px:q, live:true} : {px:r.ppc, live:false}; }
+function valueOf(r){ return r.nominales * priceOf(r).px; }
 
-function computeSignal(ticker){try{
-  var sym=YAHOO_OVERRIDE[ticker]||ticker;
-  var url='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(sym)+'?range=1y&interval=1d';
-  var resp=UrlFetchApp.fetch(url,{muteHttpExceptions:true,headers:{'User-Agent':'Mozilla/5.0'}});
-  if(resp.getResponseCode()!==200)return{estado:'N/D',motivo:'sin datos'};
-  var j=JSON.parse(resp.getContentText()),res=j&&j.chart&&j.chart.result&&j.chart.result[0];
-  if(!res)return{estado:'N/D',motivo:'sin datos'};
-  var closes=(res.indicators.quote[0].close||[]).filter(function(x){return x!=null});
-  if(closes.length<15)return{estado:'N/D',motivo:'pocos datos'};
-  var last=closes[closes.length-1],ma11=sma(closes,11),ma21=sma(closes,21),ma200=sma(closes,200);
-  var alc=last>ma11&&ma11>ma21&&(ma200==null||ma21>ma200),baj=last<ma11&&ma11<ma21&&(ma200==null||ma21<ma200);
-  var est=alc?'COMPRA':baj?'VENTA':'MANTENER',mot=alc?'px > MA11 > MA21'+(ma200?' > MA200':''):baj?'px < MA11 < MA21'+(ma200?' < MA200':''):'sin alineación clara';
-  return{estado:est,motivo:mot,symbol:sym,last:round2(last),ma11:round2(ma11),ma21:round2(ma21),ma200:round2(ma200)};
-}catch(e){return{estado:'N/D',motivo:'error'}}}
-function sma(a,n){if(a.length<n)return null;var s=0;for(var i=a.length-n;i<a.length;i++)s+=a[i];return s/n}
-function round2(x){return x==null?null:Math.round(x*100)/100}
+/* PPC pasado a pesos para calcular costo/resultado */
+function ppcUSD(r){
+  
+  return r.ppc; // todo USD
+}
+function costOf(r){ return r.nominales * ppcUSD(r); }        // capital invertido (ARS)
+function pnlOf(r){ return valueOf(r) - costOf(r); }          // resultado (ARS)
+function pnlPctOf(r){ var c=costOf(r); return c>0 ? (valueOf(r)/c - 1) : 0; }
+
+function loadCCL(){
+  return api({action:'ccl'}).then(function(j){ CCL=j.ccl||null; })
+    .catch(function(){ CCL=null; });
+}
+
+/* =================== DASHBOARD · KPIs =================== */
+function renderKPIs(){
+  var capital=0, liq=0;
+  DATA.forEach(function(r){
+    var v = valueOf(r);
+    capital += v;
+    if(LIQUIDEZ_TICKERS.indexOf(r.ticker)>=0) liq += v;
+  });
+  var noLive = DATA.filter(function(r){ return !priceOf(r).live; }).length;
+  CAPITAL_TOTAL = capital;
+  $('kpiCapital').textContent = fmtUSD.format(capital);
+  $('kpiCapitalSub').textContent = noLive ? (noLive+' líneas valorizadas a PPC (sin cotización)') : 'valorizado en USD a precio de mercado';
+  $('kpiLiq').textContent = LIQUIDEZ_TICKERS.length ? fmtUSD.format(liq) : 'N/D';
+  $('kpiLiqSub').textContent = LIQUIDEZ_TICKERS.length ? 'suma de tickers de efectivo' : 'sin filas de efectivo en la base';
+  $('kpiClientes').textContent = uniqueClients().length;
+  $('kpiPos').textContent = uniqueTickers().length;
+  $('kpiPosSub').textContent = DATA.length + ' líneas en la base';
+}
+
+function fillTickerLists(){
+  var tks = uniqueTickers();
+  ['tickerList','tickerList2'].forEach(function(id){
+    var dl=$(id); dl.innerHTML='';
+    tks.forEach(function(t){ dl.appendChild(el('option',{value:t})); });
+  });
+}
+
+/* =================== BUSCADOR =================== */
+function renderSearch(){
+  var q = $('search').value.trim().toUpperCase();
+  var box=$('searchResult');
+  if(!q){ box.innerHTML=''; return; }
+  var rows = DATA.filter(function(r){ return r.ticker.indexOf(q)>=0; });
+  if(!rows.length){ box.innerHTML='<div class="empty">Ningún cliente tiene <b>'+q+'</b>.</div>'; return; }
+
+  // agrupamos por ticker exacto que matchee
+  var byTicker={};
+  rows.forEach(function(r){ (byTicker[r.ticker]=byTicker[r.ticker]||[]).push(r); });
+
+  var html='';
+  Object.keys(byTicker).sort().forEach(function(tk){
+    var list=byTicker[tk];
+    var totNom=0, totVal=0, totCost=0;
+    list.forEach(function(r){ totNom+=r.nominales; totVal+=valueOf(r); totCost+=costOf(r); });
+    var totPnl=totVal-totCost, totPct=totCost>0?(totVal/totCost-1):0;
+    var pctAUM = CAPITAL_TOTAL>0 ? (totVal/CAPITAL_TOTAL*100) : null;
+    html += '<div style="margin-bottom:18px">'+
+      '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:8px;flex-wrap:wrap">'+
+        '<span style="font-size:18px;font-weight:800;color:var(--gold)">'+tk+'</span>'+
+        '<span class="muted">'+list.length+' cliente(s) · '+fmtNum.format(totNom)+' nominales</span>'+
+        (pctAUM!=null ? '<span class="tag broker" style="background:#3a3115;color:#f0c964">'+pctAUM.toFixed(1)+'% del capital total</span>' : '')+
+        '<span style="margin-left:auto" class="mono">'+
+           (QUOTES[tk]!=null? fmtUSD.format(QUOTES[tk]) : '<span class="muted">s/cotización</span>')+
+        '</span>'+
+      '</div>'+
+      '<div class="tbl-wrap"><table><thead><tr>'+
+        '<th>Cliente</th><th>Broker</th><th class="num">Nominales</th><th class="num">PPC (USD)</th>'+
+        '<th class="num">Valorizado</th><th class="num">Resultado</th>'+
+      '</tr></thead><tbody>';
+    list.sort(function(a,b){ return b.nominales-a.nominales; }).forEach(function(r){
+      var pr=priceOf(r), pnl=pnlOf(r), pct=pnlPctOf(r), win=pnl>=0;
+      html+='<tr>'+
+        '<td>'+r.cliente+'</td>'+
+        '<td><span class="tag broker">'+r.broker+'</span></td>'+
+        '<td class="num mono">'+fmtNum.format(r.nominales)+'</td>'+
+        '<td class="num mono">'+fmtUSD.format(ppcUSD(r))+'</td>'+
+        '<td class="num mono">'+fmtUSD.format(valueOf(r))+(pr.live?'':' *')+'</td>'+
+        '<td class="num mono '+(win?'est-buy':'est-sell')+'">'+
+          (win?'+':'')+fmtUSD.format(pnl)+'<br><span style="font-size:11px">'+(win?'+':'')+(pct*100).toFixed(1)+'%</span>'+
+        '</td>'+
+      '</tr>';
+    });
+    var win=totPnl>=0;
+    html+='<tr style="background:var(--navy-2)"><td colspan="2" style="font-weight:700">Total</td>'+
+      '<td class="num mono" style="font-weight:700">'+fmtNum.format(totNom)+'</td><td></td>'+
+      '<td class="num mono" style="font-weight:700;color:var(--gold)">'+fmtUSD.format(totVal)+'</td>'+
+      '<td class="num mono '+(win?'est-buy':'est-sell')+'" style="font-weight:700">'+(win?'+':'')+fmtUSD.format(totPnl)+' ('+(win?'+':'')+(totPct*100).toFixed(1)+'%)</td></tr>';
+    html+='</tbody></table></div></div>';
+  });
+  box.innerHTML=html;
+}
+
+/* =================== SEÑALES =================== */
+function calcSignals(){
+  var tks=uniqueTickers();
+  if(!tks.length){ toast('Cargá la base primero',true); return; }
+  var box=$('signalsBox');
+  box.innerHTML='<div class="muted"><span class="spinner"></span> Calculando '+tks.length+' señales… (puede tardar)</div>';
+  api({action:'signals', tickers:tks}).then(function(j){
+    var sig=j.signals||{};
+    var order={COMPRA:0,VENTA:1,MANTENER:2,'N/D':3};
+    var rows=tks.map(function(t){ return {t:t, s:sig[t]||{estado:'N/D'}}; })
+                .sort(function(a,b){ return (order[a.s.estado]||9)-(order[b.s.estado]||9) || a.t.localeCompare(b.t); });
+    var html='<div class="tbl-wrap"><table><thead><tr>'+
+      '<th>Ticker</th><th>Señal</th><th class="num">Precio</th><th class="num">MA11</th><th class="num">MA21</th><th class="num">MA200</th><th>Detalle</th>'+
+      '</tr></thead><tbody>';
+    rows.forEach(function(o){
+      var s=o.s, est=s.estado||'N/D', cls=est==='N/D'?'ND':est;
+      html+='<tr>'+
+        '<td style="font-weight:700;color:var(--gold)">'+o.t+'</td>'+
+        '<td><span class="sig '+cls+'">'+est+'</span></td>'+
+        '<td class="num mono">'+(s.last!=null?fmtPx.format(s.last):'—')+'</td>'+
+        '<td class="num mono">'+(s.ma11!=null?fmtPx.format(s.ma11):'—')+'</td>'+
+        '<td class="num mono">'+(s.ma21!=null?fmtPx.format(s.ma21):'—')+'</td>'+
+        '<td class="num mono">'+(s.ma200!=null?fmtPx.format(s.ma200):'—')+'</td>'+
+        '<td class="muted" style="font-size:11.5px">'+(s.motivo||'')+'</td>'+
+      '</tr>';
+    });
+    html+='</tbody></table></div>'+
+      '<p class="note">Señales sobre el subyacente en su moneda de origen (USD para CEDEARs). Es dirección técnica, no recomendación de inversión.</p>';
+    box.innerHTML=html;
+  }).catch(function(err){ box.innerHTML='<div class="empty">No se pudieron calcular las señales: '+err.message+'</div>'; });
+}
 
 /* =================== BLOCK TRADE =================== */
-function blockTrade(p){
-  var ticker=String(p.ticker||'').trim().toUpperCase(),side=String(p.side||'').trim().toUpperCase();
-  var mode=String(p.mode||'').trim().toLowerCase(),value=Number(p.value),execPrice=Number(p.execPrice)||0;
-  var dryRun=(p.dryRun===true||p.dryRun==='true');
-  if(!ticker)return{ok:false,error:'Falta ticker'};if(side!=='COMPRA'&&side!=='VENTA')return{ok:false,error:'side debe ser COMPRA o VENTA'};
-  if(mode!=='porcentaje'&&mode!=='nominales')return{ok:false,error:'mode inválido'};if(!(value>0))return{ok:false,error:'value debe ser > 0'};
-  var sh=getSheet(),range=sh.getDataRange(),values=range.getValues(),changes=[];
-  for(var i=1;i<values.length;i++){var row=values[i];if(String(row[COL.ticker]).trim().toUpperCase()!==ticker)continue;
-    var oldN=Number(row[COL.nominales])||0,oldA=Number(row[COL.ppc])||0;if(side==='VENTA'&&oldN<=0)continue;
-    var delta=mode==='porcentaje'?Math.round(oldN*value/100):Math.round(value);var newN,newA=oldA;
-    if(side==='VENTA'){newN=Math.max(0,oldN-delta)}else{newN=oldN+delta;if(execPrice>0&&newN>0)newA=(oldN*oldA+delta*execPrice)/newN}
-    changes.push({rowIndex:i,broker:row[COL.broker],cliente:row[COL.cliente],oldNom:oldN,newNom:newN,delta:side==='VENTA'?-Math.min(delta,oldN):delta,oldPpc:round2(oldA),newPpc:round2(newA)})}
-  if(!changes.length)return{ok:false,error:'Ningún cliente tiene '+ticker};
-  if(dryRun)return{ok:true,dryRun:true,ticker:ticker,side:side,mode:mode,changes:changes};
-  changes.forEach(function(c){values[c.rowIndex][COL.nominales]=c.newNom;values[c.rowIndex][COL.ppc]=c.newPpc});
-  range.setValues(values);return{ok:true,dryRun:false,ticker:ticker,side:side,applied:changes.length,changes:changes};
+function updateValueLabel(){
+  $('opValueLbl').textContent = $('opMode').value==='porcentaje' ? 'Porcentaje (%)' : 'Nominales por cliente';
 }
 
-/* =================== EDICIÓN INDIVIDUAL =================== */
-function updateCell(p){
-  var row=Number(p.row),col=Number(p.col),val=p.value;
-  if(!row||col==null)return{ok:false,error:'Falta row o col'};
-  var sh=getSheet();sh.getRange(row+1,col+1).setValue(Number(val)||val); // +1 porque row/col son 0-based en el frontend
-  return{ok:true};
+function opMsg(txt, isErr){
+  var m=$('opMsg');
+  if(!txt){ m.className='hidden'; m.textContent=''; return; }
+  m.className=''; m.textContent=txt;
+  m.style.background = isErr ? '#3a1720' : '#123726';
+  m.style.color = isErr ? '#ff9aa2' : '#57e39a';
+  m.style.border = '1px solid '+(isErr?'#5a2530':'#1c5a3e');
 }
 
-function addPosition(p){
-  var broker=String(p.broker||'').trim(),cliente=String(p.cliente||'').trim();
-  var ticker=String(p.ticker||'').trim().toUpperCase(),nom=Number(p.nominales)||0,ppc=Number(p.ppc)||0;
-  if(!broker||!cliente||!ticker)return{ok:false,error:'Faltan datos'};
-  var sh=getSheet();sh.appendRow([broker,cliente,ticker,nom,ppc,'USD']);
-  return{ok:true};
+function simulate(){
+  var payload={
+    action:'blockTrade', dryRun:true,
+    ticker:$('opTicker').value.trim().toUpperCase(),
+    side:$('opSide').value,
+    mode:$('opMode').value,
+    value:parseFloat($('opValue').value),
+    execPrice:parseFloat($('opPrice').value)||0
+  };
+  opMsg('');
+  if(!payload.ticker){ opMsg('Falta el ticker.', true); return; }
+  if(!(payload.value>0)){ opMsg('Ingresá un valor válido (mayor a 0).', true); return; }
+  $('simBtn').disabled=true; $('simBtn').textContent='Simulando…';
+  api(payload).then(function(j){
+    pendingTrade = Object.assign({}, payload, {dryRun:false});
+    showSimulation(j);
+  }).catch(function(err){ opMsg('Error: '+err.message, true); })
+    .then(function(){ $('simBtn').disabled=false; $('simBtn').textContent='Simular impacto'; });
 }
 
-function deletePosition(p){
-  var row=Number(p.row);if(!row)return{ok:false,error:'Falta row'};
-  var sh=getSheet();sh.deleteRow(row+1); // +1 por header
-  return{ok:true};
+function showSimulation(j){
+  var isSell=j.side==='VENTA';
+  $('simTitle').innerHTML = (isSell?'Venta':'Compra')+' de <span style="color:var(--gold)">'+j.ticker+'</span>';
+  var totalOp=0; j.changes.forEach(function(c){ totalOp+=Math.abs(c.delta); });
+  $('simSub').textContent = 'Impacta a '+j.changes.length+' cliente(s) · modo '+j.mode+'. Total a '+(isSell?'vender':'comprar')+': '+fmtNum.format(totalOp)+' nominales. Revisá antes de confirmar; esto escribe en la planilla.';
+  var html='<div class="tbl-wrap"><table><thead><tr>'+
+    '<th>Cliente</th><th>Broker</th><th class="num">Operar</th><th class="num">Nominales</th><th class="num">PPC</th>'+
+    '</tr></thead><tbody>';
+  j.changes.forEach(function(c){
+    var op=Math.abs(c.delta);
+    html+='<tr>'+
+      '<td>'+c.cliente+'</td>'+
+      '<td><span class="tag broker">'+c.broker+'</span></td>'+
+      '<td class="num mono '+(isSell?'est-sell':'est-buy')+'" style="font-weight:700">'+(isSell?'Vender ':'Comprar ')+fmtNum.format(op)+'</td>'+
+      '<td class="num mono">'+fmtNum.format(c.oldNom)+'<span class="arrow">→</span><b>'+fmtNum.format(c.newNom)+'</b></td>'+
+      '<td class="num mono">'+fmtPx.format(c.oldPpc)+(c.newPpc!==c.oldPpc?'<span class="arrow">→</span>'+fmtPx.format(c.newPpc):'')+'</td>'+
+    '</tr>';
+  });
+  html+='<tr style="background:var(--navy-2)"><td colspan="2" style="font-weight:700">Total a '+(isSell?'vender':'comprar')+'</td>'+
+    '<td class="num mono '+(isSell?'est-sell':'est-buy')+'" style="font-weight:700">'+fmtNum.format(totalOp)+'</td><td colspan="2"></td></tr>';
+  html+='</tbody></table></div>';
+  $('simBody').innerHTML=html;
+  openModal('simModal');
 }
 
-function setLiquidity(p){
-  var cliente=String(p.cliente||'').trim(),monto=Number(p.monto)||0;
-  if(!cliente)return{ok:false,error:'Falta cliente'};
-  var sh=getSheet(),values=sh.getDataRange().getValues();
-  // buscar fila LIQUIDEZ existente
-  for(var i=1;i<values.length;i++){
-    if(String(values[i][COL.cliente]).trim()===cliente&&String(values[i][COL.ticker]).trim().toUpperCase()==='LIQUIDEZ'){
-      sh.getRange(i+1,COL.ppc+1).setValue(monto);return{ok:true,updated:true};
-    }
-  }
-  // no existe, crear
-  var broker=values.find(function(r,idx){return idx>0&&String(r[COL.cliente]).trim()===cliente});
-  sh.appendRow([broker?broker[COL.broker]:'—',cliente,'LIQUIDEZ',1,monto,'USD']);
-  return{ok:true,created:true};
+function confirmTrade(){
+  if(!pendingTrade) return;
+  var btn=$('confirmTradeBtn'); btn.disabled=true; btn.textContent='Ejecutando…';
+  api(pendingTrade).then(function(j){
+    closeModal('simModal');
+    toast('✓ '+j.side+' aplicada a '+j.applied+' cliente(s) de '+j.ticker);
+    pendingTrade=null;
+    $('opValue').value=''; $('opPrice').value='';
+    return loadData(); // refresca base y KPIs
+  }).catch(function(err){ toast(err.message,true); })
+    .then(function(){ btn.disabled=false; btn.textContent='Confirmar y ejecutar'; });
 }
-    
+
+/* =================== POR CLIENTE =================== */
+var clientChart=null;
+function fillClientSelect(){
+  var sel=$('clientSel'); var cur=sel.value;
+  sel.innerHTML='<option value="">Elegí un cliente…</option>';
+  uniqueClients().forEach(function(c){ sel.appendChild(el('option',{value:c}, c)); });
+  if(cur) sel.value=cur;
+}
+
+var PALETTE=['#D4AF37','#2f57d6','#2fbf71','#e0a93a','#8b5cf6','#e0555f','#00B4D8','#f59e0b',
+             '#3b82f6','#10b981','#ec4899','#a3a3a3','#f97316','#14b8a6','#6366f1','#eab308'];
+
+function renderClient(){
+  var name=$('clientSel').value;
+  var box=$('clientBox');
+  if(!name){ box.innerHTML=''; if(clientChart){clientChart.destroy();clientChart=null;} return; }
+
+  // Separar holdings reales de LIQUIDEZ
+  var allRows=DATA.filter(function(r){ return r.cliente===name; });
+  var rows=allRows.filter(function(r){ return r.ticker!=='LIQUIDEZ'; });
+  var liqRow=allRows.find(function(r){ return r.ticker==='LIQUIDEZ'; });
+  var liqUSD=liqRow? liqRow.ppc : 0;
+
+  var total=0, totalCost=0;
+  rows.forEach(function(r){ total+=valueOf(r); totalCost+=costOf(r); });
+  var totalPnl=total-totalCost, totalPct=totalCost>0?(total/totalCost-1):0, winC=totalPnl>=0;
+  var totalConLiq=total+liqUSD;
+  var liqPct=totalConLiq>0?(liqUSD/totalConLiq*100):0;
+
+  // filas individuales (sin agregar por ticker, para poder editar cada fila)
+  var sortedRows=rows.slice().sort(function(a,b){return valueOf(b)-valueOf(a);});
+
+  // encontrar rowIndex en DATA original (para edición)
+  sortedRows.forEach(function(r){
+    r._idx=DATA.indexOf(r);
+  });
+
+  box.innerHTML=
+    '<div class="kpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:22px">'+
+      '<div class="kpi"><div class="label">Capitalización</div><div class="value mono">'+fmtUSD.format(total)+'</div><div class="sub">'+rows.length+' posiciones</div></div>'+
+      '<div class="kpi accent-blue"><div class="label">Resultado</div><div class="value mono '+(winC?'est-buy':'est-sell')+'" style="font-size:20px">'+(winC?'+':'')+fmtUSD.format(totalPnl)+'</div><div class="sub '+(winC?'est-buy':'est-sell')+'">'+(winC?'+':'')+(totalPct*100).toFixed(1)+'%</div></div>'+
+      '<div class="kpi"><div class="label">Liquidez</div><div class="value mono" style="font-size:20px">'+fmtUSD.format(liqUSD)+'</div><div class="sub">'+liqPct.toFixed(1)+'% de la cartera</div></div>'+
+      '<div class="kpi"><div class="label">Total c/liquidez</div><div class="value mono" style="font-size:20px">'+fmtUSD.format(totalConLiq)+'</div><div class="sub">cartera + efectivo</div></div>'+
+    '</div>'+
+
+    '<div class="panel" style="margin-bottom:14px">'+
+      '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'+
+        '<div class="section-title" style="margin:0"><span class="bar"></span><h2>Liquidez</h2></div>'+
+        '<input id="liqInput" class="mono" type="number" step="any" min="0" value="'+liqUSD+'" style="width:180px;font-size:15px" placeholder="USD">'+
+        '<button class="btn gold" onclick="saveLiquidity()">Guardar</button>'+
+        '<span id="liqMsg" class="muted" style="font-size:12px"></span>'+
+      '</div>'+
+    '</div>'+
+
+    '<div class="grid-2">'+
+      '<div class="panel" style="margin:0"><div class="section-title"><span class="bar"></span><h2>Ponderación</h2></div>'+
+        '<div style="max-width:340px;margin:0 auto"><canvas id="pie" height="300"></canvas></div></div>'+
+      '<div class="panel" style="margin:0"><div class="section-title" style="margin-bottom:6px"><span class="bar"></span><h2>Posiciones (editable)</h2></div>'+
+        '<p class="note" style="margin:0 0 10px">Click en Nominales o PPC para editar. Los cambios se graban en el Sheet.</p>'+
+        '<div class="tbl-wrap"><table id="editTable"><thead><tr>'+
+          '<th>Ticker</th><th>Broker</th><th class="num">Nominales</th><th class="num">PPC</th><th class="num">Valor</th><th class="num">Result.</th><th class="num">Peso</th><th></th>'+
+        '</tr></thead><tbody>'+
+        sortedRows.map(function(r,i){
+          var pr=priceOf(r), pnl=pnlOf(r), pct=pnlPctOf(r), w=pnl>=0;
+          var rowIdx=r._idx; // index en DATA
+          return '<tr data-idx="'+rowIdx+'">'+
+            '<td style="font-weight:700;color:var(--gold)">'+r.ticker+'</td>'+
+            '<td><span class="tag broker">'+r.broker+'</span></td>'+
+            '<td class="num mono ed" data-col="'+COL_NOM+'" data-row="'+rowIdx+'">'+fmtNum.format(r.nominales)+'</td>'+
+            '<td class="num mono ed" data-col="'+COL_PPC+'" data-row="'+rowIdx+'">'+fmtPx.format(r.ppc)+'</td>'+
+            '<td class="num mono">'+fmtUSD.format(valueOf(r))+(pr.live?'':' *')+'</td>'+
+            '<td class="num mono '+(w?'est-buy':'est-sell')+'">'+(w?'+':'')+(pct*100).toFixed(1)+'%</td>'+
+            '<td class="num mono">'+(total?(valueOf(r)/total*100).toFixed(1):'0')+'%</td>'+
+            '<td><span class="del-btn" data-row="'+rowIdx+'" title="Eliminar">✕</span></td>'+
+          '</tr>';
+        }).join('')+
+        '</tbody></table></div>'+
+        '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+
+          '<input id="addTicker" placeholder="Ticker" style="width:90px">'+
+          '<input id="addBroker" placeholder="Broker" style="width:90px" value="Balanz">'+
+          '<input id="addNom" type="number" placeholder="Nominales" style="width:110px" class="mono">'+
+          '<input id="addPpc" type="number" step="any" placeholder="PPC (USD)" style="width:110px" class="mono">'+
+          '<button class="btn" onclick="addPos()">+ Agregar</button>'+
+        '</div>'+
+        '<p class="note">* valorizado a PPC por falta de cotización.</p></div>'+
+    '</div>';
+
+  // hacer celdas editables
+  setupEditable();
+
+  // botones eliminar
+  Array.prototype.forEach.call(document.querySelectorAll('.del-btn'), function(btn){
+    btn.addEventListener('click', function(){ deletePos(Number(btn.dataset.row)); });
+  });
+
+  // gráfico
+  var agg={};
+  rows.forEach(function(r){
+    var k=r.ticker; if(!agg[k]) agg[k]={ticker:k,val:0};
+    agg[k].val+=valueOf(r);
+  });
+  var items=Object.keys(agg).map(function(k){return agg[k]}).sort(function(a,b){return b.val-a.val});
+  var top=items.slice(0,12), otros=items.slice(12).reduce(function(s,i){return s+i.val},0);
+  var labels=top.map(function(i){return i.ticker}), vals=top.map(function(i){return Math.round(i.val)});
+  if(otros>0){labels.push('Otros');vals.push(Math.round(otros))}
+  if(liqUSD>0){labels.push('Liquidez');vals.push(Math.round(liqUSD))}
+  if(clientChart) clientChart.destroy();
+  clientChart=new Chart($('pie'),{
+    type:'doughnut',
+    data:{labels:labels, datasets:[{data:vals, backgroundColor:PALETTE, borderColor:'#0A1628', borderWidth:2}]},
+    options:{cutout:'58%',plugins:{
+      legend:{position:'bottom',labels:{color:'#A0B4CC',font:{family:'Montserrat',size:11},boxWidth:12,padding:9}},
+      tooltip:{callbacks:{label:function(ctx){var p=totalConLiq?(ctx.parsed/totalConLiq*100).toFixed(1):0;return ' '+ctx.label+': '+fmtUSD.format(ctx.parsed)+' ('+p+'%)';}}}
+    }}
+  });
+}
+
+var COL_NOM=3, COL_PPC=4;
+
+function setupEditable(){
+  Array.prototype.forEach.call(document.querySelectorAll('.ed'), function(cell){
+    cell.style.cursor='pointer';
+    cell.addEventListener('dblclick', function(){
+      if(cell.querySelector('input')) return;
+      var oldVal=cell.textContent.replace(/[^0-9.,-]/g,'').replace(/,/g,'');
+      var inp=document.createElement('input');
+      inp.type='number'; inp.step='any'; inp.value=oldVal;
+      inp.className='mono'; inp.style.cssText='width:90px;padding:4px 6px;font-size:12px';
+      cell.textContent=''; cell.appendChild(inp); inp.focus(); inp.select();
+      function save(){
+        var nv=parseFloat(inp.value);
+        if(isNaN(nv)){cell.textContent=oldVal;return;}
+        var rowIdx=Number(cell.dataset.row), col=Number(cell.dataset.col);
+        cell.textContent='…';
+        api({action:'updateCell',row:rowIdx+1,col:col,value:nv}).then(function(){
+          DATA[rowIdx][col===COL_NOM?'nominales':'ppc']=nv;
+          renderClient();toast('✓ Guardado');
+        }).catch(function(err){cell.textContent=oldVal;toast(err.message,true);});
+      }
+      inp.addEventListener('blur', save);
+      inp.addEventListener('keydown',function(e){if(e.key==='Enter')save();if(e.key==='Escape'){cell.textContent=oldVal;}});
+    });
+  });
+}
+
+function saveLiquidity(){
+  var name=$('clientSel').value; if(!name) return;
+  var monto=parseFloat($('liqInput').value)||0;
+  $('liqMsg').textContent='Guardando…';
+  api({action:'setLiquidity',cliente:name,monto:monto}).then(function(){
+    $('liqMsg').textContent='✓ Guardado';
+    return loadData();
+  }).then(function(){renderClient()}).catch(function(err){$('liqMsg').textContent='Error: '+err.message;});
+}
+
+function addPos(){
+  var name=$('clientSel').value; if(!name) return;
+  var tk=$('addTicker').value.trim().toUpperCase(), brk=$('addBroker').value.trim();
+  var nom=parseFloat($('addNom').value)||0, ppc=parseFloat($('addPpc').value)||0;
+  if(!tk){toast('Falta ticker',true);return;}
+  api({action:'addPosition',broker:brk,cliente:name,ticker:tk,nominales:nom,ppc:ppc}).then(function(){
+    toast('✓ '+tk+' agregado'); $('addTicker').value='';$('addNom').value='';$('addPpc').value='';
+    return loadData();
+  }).then(function(){renderClient()}).catch(function(err){toast(err.message,true);});
+}
+
+function deletePos(rowIdx){
+  if(!confirm('¿Eliminar esta posición del Sheet?')) return;
+  api({action:'deletePosition',row:rowIdx+1}).then(function(){
+    toast('✓ Eliminada'); return loadData();
+  }).then(function(){renderClient()}).catch(function(err){toast(err.message,true);});
+}
+
+/* =================== NAVEGACIÓN / EVENTOS =================== */
+function switchView(v){
+  ['dashboard','ops','client'].forEach(function(x){ $('view-'+x).classList.toggle('hidden', x!==v); });
+  Array.prototype.forEach.call(document.querySelectorAll('#nav button'), function(b){ b.classList.toggle('active', b.dataset.view===v); });
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  // nav
+  Array.prototype.forEach.call(document.querySelectorAll('#nav button'), function(b){
+    b.addEventListener('click', function(){ switchView(b.dataset.view); });
+  });
+  // cierres de modales
+  Array.prototype.forEach.call(document.querySelectorAll('[data-close]'), function(x){
+    x.addEventListener('click', function(){ closeModal(x.dataset.close); });
+  });
+  // login / logout
+  $('loginBtn').addEventListener('click', doLogin);
+  $('loginPass').addEventListener('keydown', function(e){ if(e.key==='Enter') doLogin(); });
+  $('logoutBtn').addEventListener('click', logout);
+  // refresh
+  $('refreshBtn').addEventListener('click', loadData);
+  // buscador
+  $('search').addEventListener('input', renderSearch);
+  // señales
+  $('calcSignals').addEventListener('click', calcSignals);
+  // ops
+  $('opMode').addEventListener('change', updateValueLabel);
+  $('simBtn').addEventListener('click', simulate);
+  $('confirmTradeBtn').addEventListener('click', confirmTrade);
+  // cliente
+  $('clientSel').addEventListener('change', renderClient);
+  updateValueLabel();
+
+  if(CFG.token) loadData(); else openModal('loginModal');
+});
+</script>
+</body>
+</html>
