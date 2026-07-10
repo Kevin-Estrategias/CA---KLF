@@ -231,19 +231,23 @@
               <select id="opSide"><option value="VENTA">Venta</option><option value="COMPRA">Compra</option></select>
             </div>
             <div>
-              <label class="fld">Modo</label>
-              <select id="opMode"><option value="porcentaje">% de cada posición</option><option value="nominales">Nominales por cliente</option></select>
+              <label class="fld">Aplicar a</label>
+              <select id="opFilter"><option value="holders">Clientes que tienen el ticker</option><option value="liquidity">Clientes con liquidez USD</option></select>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div>
-              <label class="fld" id="opValueLbl">Porcentaje (%)</label>
-              <input id="opValue" class="mono" type="number" min="0" step="any" placeholder="25">
+              <label class="fld">Modo</label>
+              <select id="opMode"><option value="porcentaje">% de cada posición / liquidez</option><option value="nominales">Nominales por cliente</option></select>
             </div>
             <div>
-              <label class="fld">Precio de ejecución (ARS)</label>
-              <input id="opPrice" class="mono" type="number" min="0" step="any" placeholder="opcional en ventas">
+              <label class="fld">Precio de ejecución (USD)</label>
+              <input id="opPrice" class="mono" type="number" min="0" step="any" placeholder="precio al que se opera">
             </div>
+          </div>
+          <div>
+            <label class="fld" id="opValueLbl">Porcentaje (%)</label>
+            <input id="opValue" class="mono" type="number" min="0" step="any" placeholder="25">
           </div>
           <button class="btn gold" id="simBtn" style="margin-top:4px">Simular impacto</button>
           <div id="opMsg" class="hidden" style="margin-top:6px;font-size:12.5px;padding:11px 13px;border-radius:9px"></div>
@@ -253,10 +257,11 @@
       <div class="panel" style="margin:0">
         <div class="section-title"><span class="bar"></span><h2>Guía rápida</h2></div>
         <ul style="margin:0;padding-left:18px;color:var(--muted);font-size:13px;line-height:1.9">
-          <li><b style="color:var(--txt)">% de cada posición:</b> vende/compra ese % sobre la tenencia individual de cada cliente (ideal para rebalanceos).</li>
-          <li><b style="color:var(--txt)">Nominales por cliente:</b> aplica esa cantidad fija a cada cliente (se topea en 0 en ventas).</li>
-          <li>En <b style="color:var(--txt)">compras</b>, el PPC se recalcula ponderado con el precio de ejecución.</li>
-          <li>En <b style="color:var(--txt)">ventas</b>, el PPC no cambia; si la posición queda en 0 la fila queda en 0.</li>
+          <li><b style="color:var(--txt)">Clientes que tienen el ticker:</b> solo toca a quienes ya tienen ese papel en cartera. Ideal para ventas y rebalanceos.</li>
+          <li><b style="color:var(--txt)">Clientes con liquidez USD:</b> solo toca a quienes tienen efectivo en USD. Ideal para compras nuevas.</li>
+          <li><b style="color:var(--txt)">% de cada posición/liquidez:</b> en ventas, vende ese % de la tenencia. En compras con liquidez, usa ese % del efectivo.</li>
+          <li><b style="color:var(--txt)">Nominales por cliente:</b> aplica esa cantidad fija a cada cliente.</li>
+          <li>El PPC se recalcula ponderado en compras. En ventas no cambia.</li>
           <li>Nada se escribe hasta que confirmás en la ventana de simulación.</li>
         </ul>
       </div>
@@ -434,18 +439,19 @@ function loadCCL(){
 
 /* =================== DASHBOARD · KPIs =================== */
 function renderKPIs(){
-  var capital=0, liq=0;
+  var capital=0, liqUSD=0, liqARS=0, liqCount=0;
   DATA.forEach(function(r){
-    var v = valueOf(r);
-    capital += v;
-    if(LIQUIDEZ_TICKERS.indexOf(r.ticker)>=0) liq += v;
+    if(r.ticker==='LIQUIDEZ_USD'||r.ticker==='LIQUIDEZ'){ liqUSD += r.ppc; liqCount++; return; }
+    if(r.ticker==='LIQUIDEZ_ARS'){ liqARS += r.ppc; liqCount++; return; }
+    if(r.ticker.indexOf('LIQUIDEZ')>=0) return; // ignorar otras variantes
+    capital += valueOf(r);
   });
-  var noLive = DATA.filter(function(r){ return !priceOf(r).live; }).length;
+  var noLive = DATA.filter(function(r){ return r.ticker.indexOf('LIQUIDEZ')<0 && !priceOf(r).live; }).length;
   CAPITAL_TOTAL = capital;
   $('kpiCapital').textContent = fmtUSD.format(capital);
   $('kpiCapitalSub').textContent = noLive ? (noLive+' líneas valorizadas a PPC (sin cotización)') : 'valorizado en USD a precio de mercado';
-  $('kpiLiq').textContent = LIQUIDEZ_TICKERS.length ? fmtUSD.format(liq) : 'N/D';
-  $('kpiLiqSub').textContent = LIQUIDEZ_TICKERS.length ? 'suma de tickers de efectivo' : 'sin filas de efectivo en la base';
+  $('kpiLiq').textContent = liqCount ? fmtUSD.format(liqUSD)+(liqARS>0?' + $'+fmtNum.format(liqARS)+' ARS':'') : 'N/D';
+  $('kpiLiqSub').textContent = liqCount ? (liqCount+' registro(s) de liquidez') : 'cargá liquidez en la vista por cliente';
   $('kpiClientes').textContent = uniqueClients().length;
   $('kpiPos').textContent = uniqueTickers().length;
   $('kpiPosSub').textContent = DATA.length + ' líneas en la base';
@@ -464,7 +470,7 @@ function renderSearch(){
   var q = $('search').value.trim().toUpperCase();
   var box=$('searchResult');
   if(!q){ box.innerHTML=''; return; }
-  var rows = DATA.filter(function(r){ return r.ticker.indexOf(q)>=0; });
+  var rows = DATA.filter(function(r){ return r.ticker.indexOf('LIQUIDEZ')<0 && r.ticker.indexOf(q)>=0; });
   if(!rows.length){ box.innerHTML='<div class="empty">Ningún cliente tiene <b>'+q+'</b>.</div>'; return; }
 
   // agrupamos por ticker exacto que matchee
@@ -484,21 +490,25 @@ function renderSearch(){
         '<span class="muted">'+list.length+' cliente(s) · '+fmtNum.format(totNom)+' nominales</span>'+
         (pctAUM!=null ? '<span class="tag broker" style="background:#3a3115;color:#f0c964">'+pctAUM.toFixed(1)+'% del capital total</span>' : '')+
         '<span style="margin-left:auto" class="mono">'+
-           (QUOTES[tk]!=null? fmtUSD.format(QUOTES[tk]) : '<span class="muted">s/cotización</span>')+
+           (QUOTES[tk]!=null? 'Px: $'+fmtPx.format(QUOTES[tk]) : '<span class="muted">s/cotización</span>')+
         '</span>'+
       '</div>'+
       '<div class="tbl-wrap"><table><thead><tr>'+
         '<th>Cliente</th><th>Broker</th><th class="num">Nominales</th><th class="num">PPC (USD)</th>'+
-        '<th class="num">Valorizado</th><th class="num">Resultado</th>'+
+        '<th class="num">Valorizado</th><th class="num">% Cartera</th><th class="num">Resultado</th>'+
       '</tr></thead><tbody>';
     list.sort(function(a,b){ return b.nominales-a.nominales; }).forEach(function(r){
       var pr=priceOf(r), pnl=pnlOf(r), pct=pnlPctOf(r), win=pnl>=0;
+      // calcular el total de la cartera de este cliente para sacar el %
+      var clientTotal=0; DATA.forEach(function(d){ if(d.cliente===r.cliente && d.ticker.indexOf('LIQUIDEZ')<0) clientTotal+=valueOf(d); });
+      var pctCartera=clientTotal>0?(valueOf(r)/clientTotal*100):0;
       html+='<tr>'+
         '<td>'+r.cliente+'</td>'+
         '<td><span class="tag broker">'+r.broker+'</span></td>'+
         '<td class="num mono">'+fmtNum.format(r.nominales)+'</td>'+
         '<td class="num mono">'+fmtUSD.format(ppcUSD(r))+'</td>'+
         '<td class="num mono">'+fmtUSD.format(valueOf(r))+(pr.live?'':' *')+'</td>'+
+        '<td class="num mono" style="color:var(--teal)">'+pctCartera.toFixed(1)+'%</td>'+
         '<td class="num mono '+(win?'est-buy':'est-sell')+'">'+
           (win?'+':'')+fmtUSD.format(pnl)+'<br><span style="font-size:11px">'+(win?'+':'')+(pct*100).toFixed(1)+'%</span>'+
         '</td>'+
@@ -507,7 +517,7 @@ function renderSearch(){
     var win=totPnl>=0;
     html+='<tr style="background:var(--navy-2)"><td colspan="2" style="font-weight:700">Total</td>'+
       '<td class="num mono" style="font-weight:700">'+fmtNum.format(totNom)+'</td><td></td>'+
-      '<td class="num mono" style="font-weight:700;color:var(--gold)">'+fmtUSD.format(totVal)+'</td>'+
+      '<td class="num mono" style="font-weight:700;color:var(--gold)">'+fmtUSD.format(totVal)+'</td><td></td>'+
       '<td class="num mono '+(win?'est-buy':'est-sell')+'" style="font-weight:700">'+(win?'+':'')+fmtUSD.format(totPnl)+' ('+(win?'+':'')+(totPct*100).toFixed(1)+'%)</td></tr>';
     html+='</tbody></table></div></div>';
   });
@@ -565,6 +575,7 @@ function simulate(){
     action:'blockTrade', dryRun:true,
     ticker:$('opTicker').value.trim().toUpperCase(),
     side:$('opSide').value,
+    filter:$('opFilter').value,
     mode:$('opMode').value,
     value:parseFloat($('opValue').value),
     execPrice:parseFloat($('opPrice').value)||0
@@ -572,6 +583,7 @@ function simulate(){
   opMsg('');
   if(!payload.ticker){ opMsg('Falta el ticker.', true); return; }
   if(!(payload.value>0)){ opMsg('Ingresá un valor válido (mayor a 0).', true); return; }
+  if(payload.side==='COMPRA'&&payload.filter==='liquidity'&&!payload.execPrice){ opMsg('Para compras con liquidez necesitás el precio de ejecución.', true); return; }
   $('simBtn').disabled=true; $('simBtn').textContent='Simulando…';
   api(payload).then(function(j){
     pendingTrade = Object.assign({}, payload, {dryRun:false});
@@ -581,25 +593,27 @@ function simulate(){
 }
 
 function showSimulation(j){
-  var isSell=j.side==='VENTA';
+  var isSell=j.side==='VENTA'; var isLiq=(j.filter==='liquidity');
   $('simTitle').innerHTML = (isSell?'Venta':'Compra')+' de <span style="color:var(--gold)">'+j.ticker+'</span>';
   var totalOp=0; j.changes.forEach(function(c){ totalOp+=Math.abs(c.delta); });
-  $('simSub').textContent = 'Impacta a '+j.changes.length+' cliente(s) · modo '+j.mode+'. Total a '+(isSell?'vender':'comprar')+': '+fmtNum.format(totalOp)+' nominales. Revisá antes de confirmar; esto escribe en la planilla.';
+  $('simSub').textContent = 'Impacta a '+j.changes.length+' cliente(s) · modo '+j.mode+(isLiq?' · desde liquidez':'')+'. Total: '+fmtNum.format(totalOp)+' nominales.';
   var html='<div class="tbl-wrap"><table><thead><tr>'+
     '<th>Cliente</th><th>Broker</th><th class="num">Operar</th><th class="num">Nominales</th><th class="num">PPC</th>'+
+    (isLiq?'<th class="num">Liquidez USD</th>':'')+
     '</tr></thead><tbody>';
   j.changes.forEach(function(c){
     var op=Math.abs(c.delta);
     html+='<tr>'+
       '<td>'+c.cliente+'</td>'+
-      '<td><span class="tag broker">'+c.broker+'</span></td>'+
+      '<td><span class="tag broker">'+(c.broker||'—')+'</span></td>'+
       '<td class="num mono '+(isSell?'est-sell':'est-buy')+'" style="font-weight:700">'+(isSell?'Vender ':'Comprar ')+fmtNum.format(op)+'</td>'+
       '<td class="num mono">'+fmtNum.format(c.oldNom)+'<span class="arrow">→</span><b>'+fmtNum.format(c.newNom)+'</b></td>'+
       '<td class="num mono">'+fmtPx.format(c.oldPpc)+(c.newPpc!==c.oldPpc?'<span class="arrow">→</span>'+fmtPx.format(c.newPpc):'')+'</td>'+
+      (isLiq&&c.liqBefore!=null?'<td class="num mono">'+fmtUSD.format(c.liqBefore)+'<span class="arrow">→</span><b>'+fmtUSD.format(c.liqAfter)+'</b></td>':'')+
     '</tr>';
   });
-  html+='<tr style="background:var(--navy-2)"><td colspan="2" style="font-weight:700">Total a '+(isSell?'vender':'comprar')+'</td>'+
-    '<td class="num mono '+(isSell?'est-sell':'est-buy')+'" style="font-weight:700">'+fmtNum.format(totalOp)+'</td><td colspan="2"></td></tr>';
+  html+='<tr style="background:var(--navy-2)"><td colspan="2" style="font-weight:700">Total</td>'+
+    '<td class="num mono '+(isSell?'est-sell':'est-buy')+'" style="font-weight:700">'+fmtNum.format(totalOp)+'</td><td colspan="'+(isLiq?'3':'2')+'"></td></tr>';
   html+='</tbody></table></div>';
   $('simBody').innerHTML=html;
   openModal('simModal');
@@ -637,14 +651,16 @@ function renderClient(){
 
   // Separar holdings reales de LIQUIDEZ
   var allRows=DATA.filter(function(r){ return r.cliente===name; });
-  var rows=allRows.filter(function(r){ return r.ticker!=='LIQUIDEZ'; });
-  var liqRow=allRows.find(function(r){ return r.ticker==='LIQUIDEZ'; });
-  var liqUSD=liqRow? liqRow.ppc : 0;
+  var rows=allRows.filter(function(r){ return r.ticker.indexOf('LIQUIDEZ')<0; });
+  var liqUSDRow=allRows.find(function(r){ return r.ticker==='LIQUIDEZ_USD'||r.ticker==='LIQUIDEZ'; });
+  var liqARSRow=allRows.find(function(r){ return r.ticker==='LIQUIDEZ_ARS'; });
+  var liqUSD=liqUSDRow? liqUSDRow.ppc : 0;
+  var liqARS=liqARSRow? liqARSRow.ppc : 0;
 
   var total=0, totalCost=0;
   rows.forEach(function(r){ total+=valueOf(r); totalCost+=costOf(r); });
   var totalPnl=total-totalCost, totalPct=totalCost>0?(total/totalCost-1):0, winC=totalPnl>=0;
-  var totalConLiq=total+liqUSD;
+  var totalConLiq=total+liqUSD; // ARS no se suma al total USD por ahora
   var liqPct=totalConLiq>0?(liqUSD/totalConLiq*100):0;
 
   // filas individuales (sin agregar por ticker, para poder editar cada fila)
@@ -659,14 +675,17 @@ function renderClient(){
     '<div class="kpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:22px">'+
       '<div class="kpi"><div class="label">Capitalización</div><div class="value mono">'+fmtUSD.format(total)+'</div><div class="sub">'+rows.length+' posiciones</div></div>'+
       '<div class="kpi accent-blue"><div class="label">Resultado</div><div class="value mono '+(winC?'est-buy':'est-sell')+'" style="font-size:20px">'+(winC?'+':'')+fmtUSD.format(totalPnl)+'</div><div class="sub '+(winC?'est-buy':'est-sell')+'">'+(winC?'+':'')+(totalPct*100).toFixed(1)+'%</div></div>'+
-      '<div class="kpi"><div class="label">Liquidez</div><div class="value mono" style="font-size:20px">'+fmtUSD.format(liqUSD)+'</div><div class="sub">'+liqPct.toFixed(1)+'% de la cartera</div></div>'+
-      '<div class="kpi"><div class="label">Total c/liquidez</div><div class="value mono" style="font-size:20px">'+fmtUSD.format(totalConLiq)+'</div><div class="sub">cartera + efectivo</div></div>'+
+      '<div class="kpi"><div class="label">Liquidez USD</div><div class="value mono" style="font-size:20px">'+fmtUSD.format(liqUSD)+'</div><div class="sub">'+liqPct.toFixed(1)+'% de la cartera</div></div>'+
+      '<div class="kpi"><div class="label">Liquidez ARS</div><div class="value mono" style="font-size:20px">$'+fmtNum.format(liqARS)+'</div><div class="sub">en pesos</div></div>'+
     '</div>'+
 
     '<div class="panel" style="margin-bottom:14px">'+
       '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'+
         '<div class="section-title" style="margin:0"><span class="bar"></span><h2>Liquidez</h2></div>'+
-        '<input id="liqInput" class="mono" type="number" step="any" min="0" value="'+liqUSD+'" style="width:180px;font-size:15px" placeholder="USD">'+
+        '<div style="display:flex;align-items:center;gap:6px"><label class="fld" style="margin:0">USD</label>'+
+        '<input id="liqInputUSD" class="mono" type="number" step="any" min="0" value="'+liqUSD+'" style="width:160px;font-size:14px" placeholder="Dólares"></div>'+
+        '<div style="display:flex;align-items:center;gap:6px"><label class="fld" style="margin:0">ARS</label>'+
+        '<input id="liqInputARS" class="mono" type="number" step="any" min="0" value="'+liqARS+'" style="width:160px;font-size:14px" placeholder="Pesos"></div>'+
         '<button class="btn gold" onclick="saveLiquidity()">Guardar</button>'+
         '<span id="liqMsg" class="muted" style="font-size:12px"></span>'+
       '</div>'+
@@ -765,9 +784,13 @@ function setupEditable(){
 
 function saveLiquidity(){
   var name=$('clientSel').value; if(!name) return;
-  var monto=parseFloat($('liqInput').value)||0;
+  var montoUSD=parseFloat($('liqInputUSD').value)||0;
+  var montoARS=parseFloat($('liqInputARS').value)||0;
   $('liqMsg').textContent='Guardando…';
-  api({action:'setLiquidity',cliente:name,monto:monto}).then(function(){
+  Promise.all([
+    api({action:'setLiquidity',cliente:name,monto:montoUSD,tipo:'USD'}),
+    api({action:'setLiquidity',cliente:name,monto:montoARS,tipo:'ARS'})
+  ]).then(function(){
     $('liqMsg').textContent='✓ Guardado';
     return loadData();
   }).then(function(){renderClient()}).catch(function(err){$('liqMsg').textContent='Error: '+err.message;});
